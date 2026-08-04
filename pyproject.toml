@@ -1,0 +1,24 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sinmonto"
+# "sinmonto" est un nom de travail, jamais formellement verrouillé —
+# constitution-finale.md §6 le flague depuis le début comme "à trancher
+# avant la première release publique". Ce pyproject.toml existe pour la
+# raison concrète ci-dessous (imposer 3.11+), pas pour clore la question
+# du nom. À renommer avant toute publication réelle si besoin.
+version = "0.1.0-rc1"
+description = "Moteur de décision événementiel, explicable, en Python pur — zéro dépendance."
+requires-python = ">=3.11"
+# Verrouillé dès constitution-finale.md §6. Raison concrète, pas théorique :
+# @dataclass(slots=True) — utilisé sur tous les objets internes chauds —
+# n'existe qu'à partir de Python 3.10. Meta IA a dû patcher le code pour le
+# faire tourner sur 3.9 en revue ; ce fichier existe pour que `pip install`
+# refuse proprement sur un Python incompatible plutôt que d'échouer de façon
+# confuse au premier import.
+dependencies = []
+
+[tool.hatch.build.targets.wheel]
+packages = ["sinmonto"]

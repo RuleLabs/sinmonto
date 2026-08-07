@@ -18,7 +18,7 @@ from uuid import UUID
 
 @dataclass(frozen=True, slots=True)
 class ConditionTrace:
-    kind: str  # "field" | "and" | "or" | "not"
+    kind: str  # "field" | "and" | "or" | "not" | "none" | "error"
     description: str
     result: bool
     actual_value: Any = None  # rempli seulement pour kind == "field"

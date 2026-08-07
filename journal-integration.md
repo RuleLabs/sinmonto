@@ -415,3 +415,54 @@ politique de rétention sur les stores mémoire.
 `_exceptions.py`, `_testing.py`, `examples/end_to_end.py`, `__init__.py`,
 `_version.py`, `pyproject.toml`, `constitution-finale.md`,
 `constitution-noyau.md`, `README.md`, `AGENTS.md`, `CLAUDE.md`
+
+---
+
+## 6 août 2026 (suite) — Re-revue croisée sur rc2 : rc2 → rc3
+
+**Contexte** : ChatGPT, DeepSeek, Kimi, Qwen et Grok ont chacune revérifié le
+zip `0.1.0rc2` livré après le tour précédent — pas une nouvelle revue
+complète, une vérification ciblée des corrections annoncées.
+
+**Résultat** : les six bugs bloquants tiennent (confirmé indépendamment par
+les cinq). Trois points réels remontés, tous corrigés :
+
+1. **`CLAUDE.md` toujours dupliqué dans le zip malgré le journal disant le
+   contraire.** → Trouvé par Grok. En vérifiant : le fichier réel dans le
+   sandbox était bien un symlink vers `AGENTS.md` (confirmé — la commande
+   `zip -qr` utilisée pour empaqueter avait déréférencé le symlink en copie
+   plate au moment de la création du zip, exactement le même défaut déjà
+   diagnostiqué sur l'upload initial du tour précédent. Répété par erreur
+   d'outillage, cette fois de mon propre fait. → `zip -qry` (flag `-y` :
+   préserve les symlinks). Vérifié en extrayant le zip livré et en relisant
+   le fichier — c'est bien un symlink de 9 octets, pas une copie de 4337.
+
+2. **`Fact._payload`/`Effect.payload` : copie superficielle seulement.** →
+   Trouvé par ChatGPT (deux fois) et Grok : `dict(self._payload)` protège
+   la réaffectation au premier niveau mais pas une valeur imbriquée
+   (liste, dict) mutée en place via une référence gardée par l'appelant.
+   `Effect.payload` n'avait même aucune protection. → `copy.deepcopy` pour
+   les deux, `MappingProxyType` ajouté sur `Effect.payload` (absent avant).
+
+3. **Promesse de déterminisme bit-à-bit pas clarifiée pour `trace_id`.** →
+   Signalé au tour précédent (Qwen), *dit* comme fait dans mon récapitulatif
+   mais jamais réellement écrit dans `constitution-finale.md` Q4 — vérifié,
+   l'oubli était réel. Reproposé cette fois par ChatGPT, qui recommande
+   explicitement l'option "clarifier plutôt que rendre déterministe" pour
+   cette preview. → Q4 précise maintenant que la garantie exclut
+   `trace_id` (uuid4, non reproductible par construction).
+
+**Note positive à part** : Kimi a détecté et corrigé sa propre erreur en
+cours de revue — deux uploads dans son environnement (`_engine.py` rc1 et
+`_engine(1).py` rc2), copiés dans un ordre non déterministe par
+`os.listdir()`, avait mélangé les deux versions dans sa copie de travail et
+produit un premier verdict "bloquant" basé sur du code déjà corrigé. Corrigé
+et rejoué avant de rendre son verdict final. Le genre d'auto-vérification
+que ce journal essaie de normaliser plutôt que de cacher.
+
+**Ce qui reste ouvert** : inchangé — file de signaux dérivés, `duration_ms`,
+AND non aplati, pas de politique de rétention. `UTILISATION.md` (mentionné
+par Grok) mis de côté pour un tour dédié, pas traité ici.
+
+**Fichiers concernés** : `_core.py`, `_trace.py`, `constitution-finale.md`,
+`_version.py`, `pyproject.toml`, `CLAUDE.md` (packaging, pas contenu)

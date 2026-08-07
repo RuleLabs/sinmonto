@@ -15,6 +15,7 @@ Python connaisse le package parent).
 
 from __future__ import annotations
 
+import copy
 import json
 from dataclasses import dataclass
 from decimal import Decimal
@@ -62,7 +63,14 @@ class Fact:
         # silencieusement malgré frozen=True. La propriété .payload protège
         # déjà la lecture (MappingProxyType) mais pas la construction.
         # Trouvé en revue croisée (Kimi, Qwen) — 2026-08.
-        object.__setattr__(self, "_payload", dict(self._payload))
+        #
+        # deepcopy et non dict() superficiel : un dict() ne protège que le
+        # premier niveau — une liste ou un dict imbriqué dans le payload
+        # restait partagé, mutable de l'extérieur après construction. Un
+        # Fact qui prétend être figé mais laisse fuir ses valeurs imbriquées
+        # n'est pas vraiment figé. Trouvé en re-revue (ChatGPT, Grok) —
+        # 2026-08, sur le tour suivant.
+        object.__setattr__(self, "_payload", copy.deepcopy(self._payload))
 
     @property
     def payload(self) -> Mapping[str, Any]:
@@ -117,6 +125,16 @@ class Effect:
     effect_type: str
     payload: Mapping[str, Any]
     rule_id: str
+
+    def __post_init__(self) -> None:
+        # Effect.payload n'avait aucune protection — ni copie, ni
+        # MappingProxyType, contrairement à Fact.payload. Un Effect stocké
+        # dans une trace/un log d'audit devrait être aussi figé qu'un Fact.
+        # deepcopy pour la même raison que Fact._payload ci-dessus (valeurs
+        # imbriquées), MappingProxyType pour bloquer aussi une réaffectation
+        # de clé au premier niveau après coup. Trouvé en revue croisée
+        # (Grok) — 2026-08.
+        object.__setattr__(self, "payload", MappingProxyType(copy.deepcopy(self.payload)))
 
 
 class Evaluable(Protocol):
@@ -239,6 +257,29 @@ if __name__ == "__main__":
         original["amount"] = 9999
         assert_eq(f.payload["amount"], 100)
 
+    def test_fact_payload_defensive_copy_is_deep() -> None:
+        original = {"items": [1, 2, 3]}
+        f = Fact(
+            fact_id=uuid.uuid4(), entity_id="user:1", fact_type="t",
+            _payload=original, timestamp=Decimal("0"),
+        )
+        original["items"].append(999)  # mutation d'une valeur imbriquée
+        assert_eq(f.payload["items"], [1, 2, 3])
+
+    def test_effect_payload_is_protected() -> None:
+        original = {"reason": "x", "nested": [1, 2]}
+        e = Effect(effect_type="ALERT", payload=original, rule_id="r1")
+        original["reason"] = "changed"
+        original["nested"].append(999)
+        assert_eq(e.payload["reason"], "x")
+        assert_eq(e.payload["nested"], [1, 2])
+        try:
+            e.payload["reason"] = "hack"  # type: ignore[index]
+        except TypeError:
+            pass
+        else:
+            raise AssertionError("Effect.payload devrait être en lecture seule")
+
     def test_signal_entity_id_must_match_fact() -> None:
         f = Fact(
             fact_id=uuid.uuid4(), entity_id="user:A", fact_type="t",
@@ -262,4 +303,6 @@ if __name__ == "__main__":
     test("Signal.entity_id dérivé du fact", test_signal_entity_id_derived_from_fact)
     test("Signal timer exige entity_id explicite", test_signal_requires_explicit_entity_id_without_fact)
     test("Fact.payload copié défensivement à la construction", test_fact_payload_defensive_copy)
+    test("Fact.payload : la copie défensive est profonde (valeurs imbriquées)", test_fact_payload_defensive_copy_is_deep)
+    test("Effect.payload protégé (deep copy + lecture seule)", test_effect_payload_is_protected)
     test("Signal.entity_id explicite incohérent avec fact.entity_id lève", test_signal_entity_id_must_match_fact)

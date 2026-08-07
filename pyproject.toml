@@ -8,7 +8,7 @@ name = "sinmonto"
 # règle"), vérifié sans collision commerciale ou logicielle notable. Ce
 # fichier avait un commentaire contradictoire ("jamais formellement
 # verrouillé") laissé après la décision — corrigé, 2026-08.
-version = "0.1.0rc2"
+version = "0.1.0rc3"
 description = "Moteur de décision événementiel, explicable, en Python pur — zéro dépendance."
 requires-python = ">=3.11"
 # Verrouillé dès constitution-finale.md §6. Raison concrète, pas théorique :

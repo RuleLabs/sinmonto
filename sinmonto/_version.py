@@ -1,10 +1,12 @@
 """Source unique de vérité pour la version du package."""
 
-__version__ = "0.1.0rc2"
-# rc1 -> rc2, 2026-08 : bugs bloquants de la revue croisée multi-IA corrigés
-# (atomicité ctx, causality, validation entity_id/opérateurs/retours
-# d'action, copies défensives — voir journal-integration.md). Reste en
-# pre-release (pas 0.1.0 nu) : un `pip install sinmonto` sans --pre
-# n'installe pas rc2 par défaut, cohérent avec l'esprit "preview technique,
-# API 0.x pas encore figée" plutôt qu'une promesse de stabilité. Passage à
-# 0.1.0 (sans suffixe) prévu après un premier retour d'usage externe réel.
+__version__ = "0.1.0rc3"
+# rc2 -> rc3, 2026-08 : re-revue croisée sur rc2 lui-même (ChatGPT, DeepSeek,
+# Kimi, Qwen, Grok). Fact._payload et Effect.payload passés de shallow à
+# deepcopy (valeur imbriquée mutable après construction). Clarifié en doc :
+# la garantie de déterminisme bit-à-bit exclut explicitement trace_id
+# (uuid4, non reproductible par nature). CLAUDE.md : le zip rc2 avait
+# aplati le symlink vers AGENTS.md en copie plate (même défaut zip que
+# celui déjà diagnostiqué sur l'upload initial) — recréé comme vrai
+# symlink, zip repackagé avec `-y`. rc1 -> rc2 : voir entrée précédente.
+# Reste en pre-release pour la même raison qu'avant.

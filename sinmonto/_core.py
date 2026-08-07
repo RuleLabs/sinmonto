@@ -56,6 +56,14 @@ class Fact:
     timestamp: Decimal
     causality: tuple[UUID, ...] = ()
 
+    def __post_init__(self) -> None:
+        # Copie défensive : sans ça, un appelant qui garde une référence au
+        # dict passé en _payload peut le muter après coup et le Fact change
+        # silencieusement malgré frozen=True. La propriété .payload protège
+        # déjà la lecture (MappingProxyType) mais pas la construction.
+        # Trouvé en revue croisée (Kimi, Qwen) — 2026-08.
+        object.__setattr__(self, "_payload", dict(self._payload))
+
     @property
     def payload(self) -> Mapping[str, Any]:
         return MappingProxyType(self._payload)
@@ -88,6 +96,18 @@ class Signal:
                     "Signal.entity_id est obligatoire quand fact est None "
                     "(signal timer) — impossible de le déduire."
                 )
+        elif self.fact is not None and self.entity_id != self.fact.entity_id:
+            # entity_id explicite en désaccord avec fact.entity_id : sans ce
+            # check, le moteur suit signal.entity_id pour l'évaluation pendant
+            # que le Fact reste stocké sous une autre entité — une séparation
+            # silencieuse entre les deux qui corrompt le contexte. Trouvé par
+            # ChatGPT en revue — 2026-08.
+            raise ValueError(
+                f"Signal.entity_id ({self.entity_id!r}) ne correspond pas à "
+                f"fact.entity_id ({self.fact.entity_id!r}). Utiliser le même "
+                "entity_id des deux côtés, ou ne pas le fournir pour qu'il "
+                "soit dérivé automatiquement du fact."
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -210,8 +230,36 @@ if __name__ == "__main__":
         )
         assert_eq(s.entity_id, "user:99")
 
+    def test_fact_payload_defensive_copy() -> None:
+        original = {"amount": 100}
+        f = Fact(
+            fact_id=uuid.uuid4(), entity_id="user:1", fact_type="t",
+            _payload=original, timestamp=Decimal("0"),
+        )
+        original["amount"] = 9999
+        assert_eq(f.payload["amount"], 100)
+
+    def test_signal_entity_id_must_match_fact() -> None:
+        f = Fact(
+            fact_id=uuid.uuid4(), entity_id="user:A", fact_type="t",
+            _payload={}, timestamp=Decimal("0"),
+        )
+        try:
+            Signal(
+                signal_id=uuid.uuid4(), fact=f, signal_type="t",
+                timestamp=Decimal("0"), entity_id="user:B",
+            )
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(
+                "entity_id explicite en désaccord avec fact.entity_id devrait lever"
+            )
+
     test("Fact.payload est réellement en lecture seule", test_fact_payload_is_read_only)
     test("ManualClock get/set", test_manual_clock)
     test("_EngineJSONEncoder gère Decimal et UUID", test_json_encoder_handles_decimal_and_uuid)
     test("Signal.entity_id dérivé du fact", test_signal_entity_id_derived_from_fact)
     test("Signal timer exige entity_id explicite", test_signal_requires_explicit_entity_id_without_fact)
+    test("Fact.payload copié défensivement à la construction", test_fact_payload_defensive_copy)
+    test("Signal.entity_id explicite incohérent avec fact.entity_id lève", test_signal_entity_id_must_match_fact)

@@ -41,7 +41,7 @@ Toute évolution de ce document ou de la Constitution du noyau passe par le gaba
 
 ## 6. Hygiène du projet
 
-- **Licence** : MIT ou Apache-2.0 — à trancher avant la première release publique, sans urgence technique.
+- **Licence** : Apache-2.0 — verrouillée (`LICENSE` contient le texte complet, README l'annonce). Cette ligne disait encore "à trancher" après coup ; corrigé, 2026-08.
 - **Version Python plancher** : 3.11+.
 - **Tests** : `assert` + blocs `if __name__ == "__main__":`, zéro dépendance de test tant que la surface ne justifie pas `pytest`.
 - **Nom du package** : `sinmonto` — verrouillé. Du fon *Sɛ́n mɔto* ("moteur de règle"), traduction officielle et grammaticalement correcte, pas un mot inventé. Vérifié sans collision commerciale ou logicielle notable.
@@ -80,6 +80,7 @@ EngineError
 │   └── ClockError
 └── BackendError                    (adaptateurs de persistance, hors cœur)
 ```
+**Périmètre de capture verrouillé** (débattu en revue croisée 2026-08, tranché) : le moteur capture `Exception`, jamais `BaseException`. `SystemExit`, `KeyboardInterrupt`, `GeneratorExit` ne sont pas des erreurs de règle — ils remontent et interrompent l'évaluation. Élargir la capture rendrait le moteur difficile à interrompre sans même régler l'atomicité (une mutation directe de `ctx` a déjà eu lieu au moment où l'exception est levée, quel que soit son type — voir Q5 et le mécanisme snapshot/restore de constitution-noyau.md).
 
 **Q4 — Tie-breaking de priorité entre règles à égalité**
 Ordre d'insertion stable, implémenté via le tri stable garanti par Python (`sorted(rules, key=priority, reverse=True)`). `DecisionTrace.evaluation_order` enregistre l'ordre exact d'évaluation de chaque cycle, pour audit. Garantie documentée : entrées identiques + ordre d'enregistrement identique ⇒ sorties bit-à-bit identiques, indépendamment de l'environnement d'exécution.
@@ -89,7 +90,7 @@ Fail loud à la compilation (systématique, aucune option). À l'exécution, `En
 - `continue` (défaut) : exception capturée, règle marquée `crashed` dans la trace, les autres règles continuent.
 - `fail_fast` : arrête les règles restantes de ce cycle, conserve les effets déjà produits.
 - `fail_loud` : l'exception remonte à l'appelant — réservé aux tests/CI.
-Une règle qui plante n'applique jamais partiellement son `context_delta` — tout ou rien. `Decision.has_errors: bool` pour vérification rapide sans parcourir la trace complète.
+Une règle qui plante n'applique jamais partiellement son `context_delta` — tout ou rien. Ça inclut une mutation faite directement via `ctx.set()` dans l'action (pas seulement le `context_delta` retourné) : un snapshot de `ctx` est pris avant chaque règle et restauré si elle plante — corrigé en revue croisée 2026-08, voir constitution-noyau.md. `Decision.has_errors: bool` pour vérification rapide sans parcourir la trace complète.
 
 **Réinjection des signaux dérivés** (question soulevée à trois reprises par Kimi sans jamais avoir été tranchée — fermée ici) : file d'attente interne, pas de réinjection immédiate dans le même cycle. `max_derived_depth = 3` par défaut, configurable, pour empêcher toute cascade infinie.
 
@@ -99,7 +100,8 @@ Une règle qui plante n'applique jamais partiellement son `context_delta` — to
 
 **Principe d'évolution** (formulation corrigée après le tour multi-IA) : un symbole public peut migrer d'un fichier plat vers un sous-package sans jamais casser un import déjà documenté comme public, à condition stricte que le chemin d'import promis reste résolu vers le même symbole — par réexport dans un `__init__.py`. `__all__` documente et protège la surface publique contre les imports `*` et l'introspection des outils ; ce n'est pas lui qui garantit la stabilité du chemin d'import — c'est la présence continue du symbole dans le namespace du chemin promis.
 
-**Portée du contrat public** : seul `sinmonto.Symbole` (import depuis la racine du package) est garanti stable. Les chemins qualifiés par module (`sinmonto.core.Symbole`) ne sont jamais promis — maintenir deux surfaces de stabilité au lieu d'une double la promesse à tenir sans bénéfice proportionnel. Conséquence directe : tous les fichiers internes sont préfixés `_`, sans exception, pour qu'aucune ambiguïté ne se pose sur ce qui est garanti. Tout import direct d'un fichier préfixé `_` est non supporté et peut changer sans préavis entre versions mineures.
+**Portée du contrat public** : les noms listés dans `sinmonto.__all__` (import depuis la racine du package) sont garantis stables — 37 exports en 0.1.0-preview, pas un symbole unique. Les chemins qualifiés par module (`sinmonto._core.Fact`) ne sont jamais promis — maintenir deux surfaces de stabilité au lieu d'une double la promesse à tenir sans bénéfice proportionnel. Conséquence directe : tous les fichiers internes sont préfixés `_`, sans exception, pour qu'aucune ambiguïté ne se pose sur ce qui est garanti. Tout import direct d'un fichier préfixé `_` est non supporté et peut changer sans préavis entre versions mineures.
+(Avant 2026-08, cette section promettait un symbole unique nommé « Symbole » — un placeholder de rédaction jamais remplacé par un nom réel, absent de `__all__` en pratique. Corrigé après revue croisée multi-IA : avec 37 exports, un contrat à symbole unique était une fiction, pas une promesse vérifiable.)
 
 **Structure physique** : v1.0 (et tant que le nombre de fichiers reste faible) reste plate. La séparation `api/`/`_internal/` de la Q1 initiale est reportée jusqu'à ce que le package dépasse 15 fichiers à la racine — jusque-là, la convention `_` + `__all__` suffit et est plus agile.
 

@@ -279,9 +279,139 @@ sans rapport.
   package depuis l'extérieur et `test_end_to_end.py` : tout passe, rien de
   cassé par le changement de nom.
 
-**Ce qui reste ouvert** : file d'attente des signaux dérivés (tour
-d'architecture dédié à venir), `duration_ms`, `EngineConfig` comme classe
-publique. Le nom, lui, n'est plus une question ouverte.
+---
 
-**Fichiers concernés** : tous — `sinmonto/` (ex `decisioncore/`),
-`pyproject.toml`, `constitution-finale.md`, `constitution-noyau.md`
+## 6 août 2026 — Revue croisée multi-IA (6 participants) : de rc1 à preview technique
+
+**Contexte** : ChatGPT, Grok, DeepSeek, Kimi, Qwen et Meta AI ont chacune fait
+une revue indépendante et statique du dépôt à l'état `0.1.0-rc1`, plus une
+vérification directe du code par Claude (tests exécutés, fichiers lus ligne
+par ligne, pas seulement les revues résumées). Objectif : décider si `rc1`
+peut devenir une release publique, sous forme de preview technique plutôt
+que d'attendre une v1.0 complète.
+
+**Résultat** : succès — six bugs silencieux corrigés (ceux qui trahissaient
+la promesse d'explicabilité/déterminisme, pas de simples trous documentés),
+41 tests passent (modules + intégration), doc resynchronisée dans 7
+fichiers. Deux propositions initiales de Claude se sont révélées fausses en
+cours de route et ont été corrigées par le processus multi-IA lui-même —
+gardé ci-dessous, c'est le genre d'erreur que ce journal existe pour ne pas
+répéter.
+
+**Problèmes rencontrés**
+
+1. **Contrat public `Symbole` : jamais un bug, un placeholder de rédaction
+   jamais rempli.** → Trouvé indépendamment par les six IA (unanimité rare),
+   confirmé par Claude en lisant `__init__.py`/`CLAUDE.md`/`AGENTS.md`/les
+   deux constitutions directement : le mot « Symbole » y apparaît tel quel,
+   absent de `__all__` en pratique (`hasattr(sinmonto, "Symbole")` → False).
+   → Plutôt que d'inventer un symbole unique a posteriori, la formulation
+   remplacée partout par « les 37 noms de `__all__` sont le contrat public »
+   — plus honnête vu le nombre d'exports réels.
+
+2. **Copie superficielle du contexte : un `FrozenContext` déjà figé pouvait
+   être corrompu rétroactivement.** → Trouvé indépendamment par plusieurs IA
+   (le plus détaillé avec script de reproduction complet) : `commit()`
+   faisait `self._values.copy()`, le rechargement de `previous.values` en
+   cycle suivant faisait `dict(previous.values)` — les deux superficiels, un
+   objet imbriqué (liste, dict) restait partagé entre deux `FrozenContext`.
+   → `copy.deepcopy` aux deux endroits. Test de non-régression : mutation
+   d'une liste après `commit()` ne change plus le `FrozenContext` stocké ;
+   deuxième moteur sur le même `ContextStore`, mutation en place au cycle
+   2 ne corrompt plus le `FrozenContext` du cycle 1.
+
+3. **Atomicité des règles : `ctx.set()` direct avant un crash survivait au
+   commit final — et la première correction proposée était fausse.** →
+   Claude a d'abord proposé d'élargir `except Exception` à `BaseException`.
+   Refusé par quasi-unanimité (Grok, Qwen, Meta AI, ChatGPT deux fois) —
+   avaler `SystemExit`/`KeyboardInterrupt` est un anti-pattern Python
+   reconnu. En creusant pourquoi le refus était juste, pas seulement
+   majoritaire : élargir le type d'exception capturé ne change rien au
+   problème visé, la mutation via `ctx.set()` a déjà eu lieu *avant* que
+   l'exception ne soit levée, que le `except` attrape `Exception` ou
+   `BaseException`. → `except Exception` inchangé. Vraie correction :
+   snapshot (`deepcopy`) de `ctx._values` avant chaque `rule.evaluate()`,
+   restauré si elle lève. Testé : une action qui fait `ctx.set("leaked",
+   True)` puis plante ne laisse plus `"leaked"` dans le contexte stocké.
+
+4. **`Signal.entity_id` explicite pouvait contredire `fact.entity_id` sans
+   avertissement.** → Trouvé par ChatGPT : le moteur suit `signal.entity_id`
+   pour l'évaluation pendant que le `Fact` reste stocké sous une autre
+   entité — séparation silencieuse de contexte. → `Signal.__post_init__`
+   lève `ValueError` si les deux sont fournis et diffèrent.
+
+5. **Opérateur `FieldCondition` ou kind `CompositeCondition` invalide ne
+   levait jamais rien.** → Trouvé par ChatGPT/Qwen/Kimi : un opérateur mal
+   orthographié (`"gtt"`) évaluait silencieusement `False` pour toujours,
+   nulle part une erreur — contraire à "fail loud" déjà promis en
+   constitution. → Validation ajoutée dans `__post_init__` des deux classes,
+   au moment le plus tôt possible (avant même `add_rule()`/`compile()`).
+
+6. **Retour d'action non reconnu ignoré silencieusement ; retour direct
+   d'`EvaluationResult` pouvait écraser la trace déjà calculée.** → Trouvé
+   par ChatGPT (le premier cas), Qwen (le second, en posant la question :
+   qui a le droit de muter le contexte si les règles ne doivent jamais
+   avoir d'effet de bord ?). → `Rule.evaluate()` lève `InvalidEffectError`
+   (existait, jamais utilisée jusqu'ici) sur un type non reconnu ou un
+   retour `EvaluationResult` direct, désormais interdit.
+
+7. **`Fact._payload` mutable après construction.** → Trouvé par Kimi/Qwen :
+   le dict passé au constructeur restait partagé, une mutation externe après
+   coup changeait le `Fact` malgré `frozen=True`. → Copie défensive dans
+   `Fact.__post_init__`.
+
+8. **`causality` vide pour un timer, incomplète pour un fait.** → Proposé
+   par Claude, validé par toutes les IA sans réserve. → `(fact.fact_id,
+   *fact.causality)` pour un fait, `(signal.signal_id,)` pour un timer.
+
+9. **`InMemoryFactStore(max_facts=0)` plantait avec un `IndexError` obscur**
+   (`deque(maxlen=0).popleft()` sur deque vide dès le premier `append()`).
+   → Trouvé par DeepSeek et Qwen. → `ValueError` clair dans `__init__`.
+
+10. **`_testing.py` sortait toujours avec le code 0, même avec des `FAIL`.**
+    → Proposé par DeepSeek/Qwen. Premier essai (compteur d'échecs +
+    `sys.exit(1)` dans un callback `atexit`) silencieusement inopérant —
+    Python avale explicitement une exception levée dans un callback
+    `atexit` ("Exception ignored in atexit callback"), vérifié en le
+    testant en sous-process, pas supposé. → `os._exit(1)` après `flush()`
+    explicite des flux, qui contourne le mécanisme d'exception. Revérifié :
+    run propre → 0, run avec un échec délibéré → 1.
+
+11. **Dérive doc/code étalée sur 7 fichiers** (`constitution-noyau.md` §1/§3/
+    §4 : `condition_trace`, `Signal.entity_id` absent de la spec, kind
+    `"none"`/`"error"` manquants, signature `index_rule` ; `pyproject.toml` :
+    commentaire "nom jamais verrouillé" alors que `constitution-finale.md`
+    §6 le verrouille depuis le renommage du 1er août ; licence encore "à
+    trancher" en §6 alors que `LICENSE`/README l'ont déjà réglée en
+    Apache-2.0 ; `README.md` : `test_end_to_end.py` inexistant, vrai chemin
+    `examples/end_to_end.py`, jamais mis à jour après le renommage du
+    fichier). → Chaque écart vérifié directement dans les fichiers réels
+    avant correction (pas seulement sur la foi des revues) — un des
+    reviewers avait travaillé sur un transcript abîmé et soulevé de faux
+    doutes sur la validité du TOML et de `__all__`, écartés après lecture
+    directe des fichiers.
+
+12. **`CLAUDE.md` était une copie mot pour mot d'`AGENTS.md`**, avec encore
+    le titre `# AGENTS.md` en ligne 1 — la preuve du copier-coller. → Trouvé
+    par Qwen. → `CLAUDE.md` remplacé par un pointeur d'une ligne vers
+    `AGENTS.md`, qui reste la seule source de vérité.
+
+13. **Version : la justification initiale de Claude pour `0.1.0` nu était
+    fausse.** → Claude a proposé de retirer `-rc1` et de publier `0.1.0` en
+    citant le comportement PyPI des pre-releases comme garde-fou — mais
+    `0.1.0` sans suffixe n'EST plus une pre-release, `pip install sinmonto`
+    l'installerait par défaut sans `--pre`. Confusion signalée par Qwen,
+    vérifiée : le raisonnement citait une règle PyPI réelle pour justifier
+    une conclusion qu'elle ne soutenait pas. → `0.1.0rc2` retenu (reste en
+    pre-release tant qu'il n'y a pas eu de retour d'usage externe réel), mot
+    "preview" utilisé dans le README/l'annonce plutôt que dans le tag.
+
+**Ce qui reste ouvert** — assumé, documenté, pas caché : file d'attente des
+signaux dérivés (tour d'architecture dédié, toujours pas ce tour-ci),
+`duration_ms` non mesuré, AND chaînés non aplatis dans la trace, pas de
+politique de rétention sur les stores mémoire.
+
+**Fichiers concernés** : `_core.py`, `_context.py`, `_dsl.py`, `_engine.py`,
+`_exceptions.py`, `_testing.py`, `examples/end_to_end.py`, `__init__.py`,
+`_version.py`, `pyproject.toml`, `constitution-finale.md`,
+`constitution-noyau.md`, `README.md`, `AGENTS.md`, `CLAUDE.md`

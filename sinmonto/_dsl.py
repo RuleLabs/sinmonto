@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Sequence
 
 from ._core import Effect, EvaluationResult, Fact, Signal
+from ._exceptions import InvalidConditionError, InvalidEffectError
 from ._trace import ConditionTrace
 
 __all__ = [
@@ -67,6 +68,9 @@ class Field:
         return FieldCondition(self.name, "in", tuple(values))
 
 
+_VALID_OPERATORS = frozenset({"eq", "ne", "neq", "gt", "ge", "gte", "lt", "le", "lte", "in"})
+
+
 @dataclass(frozen=True, slots=True)
 class FieldCondition:
     """Condition élémentaire appliquée à une propriété d'un Fact."""
@@ -74,6 +78,19 @@ class FieldCondition:
     field_name: str
     operator: str
     reference: Any
+
+    def __post_init__(self) -> None:
+        # Avant : un opérateur inconnu (ex. faute de frappe "gtt") ne levait
+        # jamais rien, nulle part — evaluate() retournait juste False en
+        # silence, pour toujours. Contraire à "fail loud" (constitution-
+        # finale.md). Validé ici, au moment le plus tôt possible — avant même
+        # add_rule()/compile(). Trouvé en revue croisée (ChatGPT, Qwen,
+        # Kimi) — 2026-08.
+        if self.operator not in _VALID_OPERATORS:
+            raise InvalidConditionError(
+                f"Opérateur FieldCondition inconnu: {self.operator!r}. "
+                f"Attendu l'un de: {sorted(_VALID_OPERATORS)}"
+            )
 
     def __and__(self, other: Any) -> "CompositeCondition":
         return CompositeCondition("and", (self, _to_condition(other)))
@@ -120,12 +137,26 @@ class FieldCondition:
         )
 
 
+_VALID_KINDS = frozenset({"and", "or", "not"})
+
+
 @dataclass(frozen=True, slots=True)
 class CompositeCondition:
     """Combinaison booléenne (AND, OR, NOT) de conditions."""
 
     kind: str
     children: tuple["FieldCondition | CompositeCondition", ...]
+
+    def __post_init__(self) -> None:
+        # Avant : un kind inconnu (ex. "xor") ne levait ValueError qu'à
+        # evaluate() — trop tard, après add_rule()/compile(). Validé ici
+        # pour un vrai fail-loud à la construction. Trouvé en revue croisée
+        # (Qwen) — 2026-08.
+        if self.kind.lower() not in _VALID_KINDS:
+            raise InvalidConditionError(
+                f"Kind de condition composite inconnu: {self.kind!r}. "
+                f"Attendu l'un de: {sorted(_VALID_KINDS)}"
+            )
 
     def __and__(self, other: Any) -> "CompositeCondition":
         return CompositeCondition("and", (self, _to_condition(other)))
@@ -223,12 +254,14 @@ class Rule:
 
         if self.action is not None:
             res = self.action(ctx, fact)
-            if isinstance(res, EvaluationResult):
-                return res
+            if res is None:
+                pass
             elif isinstance(res, Effect):
                 effects.append(res)
             elif isinstance(res, Signal):
                 derived_signals.append(res)
+            elif isinstance(res, dict):
+                context_delta.update(res)
             elif isinstance(res, (list, tuple)):
                 for item in res:
                     if isinstance(item, Effect):
@@ -237,8 +270,26 @@ class Rule:
                         derived_signals.append(item)
                     elif isinstance(item, dict):
                         context_delta.update(item)
-            elif isinstance(res, dict):
-                context_delta.update(res)
+                    else:
+                        raise InvalidEffectError(
+                            f"Élément non reconnu dans le retour de l'action "
+                            f"'{self.rule_id}': {type(item).__name__}. "
+                            "Attendu Effect, Signal ou dict."
+                        )
+            else:
+                # Avant : un retour non reconnu (int, str, EvaluationResult
+                # direct...) était silencieusement ignoré — matched=True mais
+                # 0 effet, sans trace ni erreur, le moteur "mentait poliment".
+                # EvaluationResult direct est maintenant explicitement
+                # interdit : ça permettait à une action d'écraser le
+                # condition_trace déjà calculé par la règle, une deuxième
+                # voie de mutation qui contourne la trace construite plus
+                # haut. Trouvé en revue croisée (ChatGPT, Qwen) — 2026-08.
+                raise InvalidEffectError(
+                    f"Retour d'action non reconnu pour la règle "
+                    f"'{self.rule_id}': {type(res).__name__}. Attendu None, "
+                    "Effect, Signal, dict, ou une liste/tuple de ceux-ci."
+                )
 
         return EvaluationResult(
             matched=True,
@@ -372,7 +423,53 @@ if __name__ == "__main__":
         assert_eq(len(result.effects), 1)
         assert_eq(dict(result.context_delta), {"risk_score": 0.85})
 
+    def test_field_condition_rejects_unknown_operator() -> None:
+        try:
+            FieldCondition("amount", "gtt", 100)  # faute de frappe volontaire
+        except InvalidConditionError:
+            pass
+        else:
+            raise AssertionError("opérateur inconnu devrait lever InvalidConditionError")
+
+    def test_composite_condition_rejects_unknown_kind() -> None:
+        try:
+            CompositeCondition("xor", (Field("a") == 1,))
+        except InvalidConditionError:
+            pass
+        else:
+            raise AssertionError("kind inconnu devrait lever InvalidConditionError")
+
+    def test_rule_action_rejects_unrecognized_return_type() -> None:
+        r = Rule("bad_return", condition=None, action=lambda ctx, fact: 42)
+        try:
+            r.evaluate(ctx=None, fact=None)
+        except InvalidEffectError:
+            pass
+        else:
+            raise AssertionError("retour d'action non reconnu devrait lever InvalidEffectError")
+
+    def test_rule_action_rejects_evaluation_result_direct_return() -> None:
+        r = Rule(
+            "bad_shortcut", condition=None,
+            action=lambda ctx, fact: EvaluationResult(
+                matched=True, effects=(), derived_signals=(),
+                context_delta={}, condition_trace=None,
+            ),
+        )
+        try:
+            r.evaluate(ctx=None, fact=None)
+        except InvalidEffectError:
+            pass
+        else:
+            raise AssertionError(
+                "un retour EvaluationResult direct devrait lever InvalidEffectError"
+            )
+
     test("FieldCondition evaluation", test_field_condition_evaluation)
     test("CompositeCondition AND short-circuit", test_composite_and_short_circuit)
     test("Rule decorator + condition_trace (corrigé)", test_rule_decorator_and_condition_trace)
     test("dict imbriqué dans une liste -> context_delta (corrigé)", test_mixed_list_action_captures_dict_as_context_delta)
+    test("FieldCondition rejette un opérateur inconnu", test_field_condition_rejects_unknown_operator)
+    test("CompositeCondition rejette un kind inconnu", test_composite_condition_rejects_unknown_kind)
+    test("Retour d'action non reconnu lève InvalidEffectError", test_rule_action_rejects_unrecognized_return_type)
+    test("Retour EvaluationResult direct interdit", test_rule_action_rejects_evaluation_result_direct_return)

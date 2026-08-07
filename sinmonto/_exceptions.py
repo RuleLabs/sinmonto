@@ -35,7 +35,18 @@ class InvalidConditionError(EngineConfigurationError):
 
 
 class InvalidEffectError(EngineConfigurationError):
-    """Effet mal formé détecté à l'enregistrement d'une règle."""
+    """Effet ou retour d'action mal formé.
+
+    Réservée à l'origine pour une validation statique à l'enregistrement
+    d'une règle (jamais implémentée — la forme d'un retour d'action ne se
+    connaît qu'en l'exécutant). Activée en v0.1.0-preview pour le cas
+    réel : Rule.evaluate() la lève quand une action retourne un type non
+    reconnu (ni None, Effect, Signal, dict, ni liste/tuple de ceux-ci).
+    Levée à l'intérieur d'evaluate() → capturée par le moteur comme
+    n'importe quelle exception de règle, gouvernée par rule_error_policy
+    (voir EngineRuntimeError/RuleEvaluationError). Trouvé en revue croisée
+    (ChatGPT, Qwen) — 2026-08.
+    """
 
 
 class EngineRuntimeError(EngineError):

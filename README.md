@@ -4,6 +4,8 @@ Moteur de décision événementiel, explicable, en Python pur — zéro dépenda
 
 Du fon *Sɛ́n mɔto* ("moteur de règle"). Chaque décision porte sa propre preuve : pourquoi une règle a matché, pourquoi une autre non, dans quel ordre, avec quelles valeurs réelles au moment de l'évaluation.
 
+**Statut : `0.1.0rc2` — preview technique.** Le noyau est testé (41 tests, modules + intégration bout-en-bout) et les bugs silencieux trouvés en revue croisée multi-IA sont corrigés (voir « Limitations connues » plus bas pour ce qui reste volontairement ouvert). Reste en pre-release le temps d'un premier retour d'usage externe réel — l'API 0.x n'est pas encore figée.
+
 ## Pourquoi
 
 - **Zéro dépendance** — s'installe et s'audite n'importe où, sans arbre de dépendances à faire valider par une équipe sécurité.
@@ -18,7 +20,7 @@ Du fon *Sɛ́n mɔto* ("moteur de règle"). Chaque décision porte sa propre pre
 pip install sinmonto
 ```
 
-*(Package en préparation — voir `pyproject.toml`. Pour l'instant, `pip install -e .` depuis une copie locale du dépôt.)*
+*(Package en préparation — voir `pyproject.toml`. Pour l'instant, `pip install -e .` depuis une copie locale du dépôt. Une fois publié : la version étant une pre-release (`0.1.0rc2`), `pip install sinmonto` seul ne l'installera pas — il faudra `pip install --pre sinmonto`, cohérent avec le statut preview ci-dessus.)*
 
 ## Exemple
 
@@ -52,12 +54,18 @@ print(trace.condition_tree.description, "->", trace.condition_tree.result)
 # amount gt 1000 -> True
 ```
 
-Un deuxième signal pour `usr_99` reprend automatiquement le contexte du premier — voir `test_end_to_end.py` et le `ContextStore`.
+Un deuxième signal pour `usr_99` reprend automatiquement le contexte du premier — voir [`examples/end_to_end.py`](./examples/end_to_end.py) et le `ContextStore`.
 
-## Limitations connues (v0.1.0)
+## Statut de la revue croisée (2026-08)
 
-- Les signaux dérivés (`EvaluationResult.derived_signals`) sont acceptés par l'API mais **non traités** — pas de cascade de règles dans cette version. Prévu en v0.2.0.
+Le dépôt est passé par une revue de code croisée multi-IA (ChatGPT, Grok, DeepSeek, Kimi, Qwen, Meta AI). Six bugs silencieux — ceux qui trahissaient la promesse d'explicabilité/déterminisme plutôt que de simples trous documentés — ont été corrigés avant cette preview : copie profonde du contexte, atomicité réelle des règles (snapshot/restore, y compris mutation directe de `ctx`), validation `Signal.entity_id`/opérateurs de condition/retours d'action, copie défensive du payload, `causality` chaînée. Détail complet, bug par bug : [`journal-integration.md`](./journal-integration.md).
+
+## Limitations connues (v0.1.0-preview) — assumées, pas des bugs
+
+- Les signaux dérivés (`EvaluationResult.derived_signals`) sont acceptés par l'API mais **non traités** — pas de cascade de règles dans cette version. Décision d'architecture (file séparée ? récursif ?) reportée à un tour dédié plutôt que corrigée en urgence. Prévu en v0.2.0.
 - `RuleTrace.duration_ms` est toujours `Decimal("0")` — pas de mesure réelle du temps d'exécution.
+- AND chaînés imbriqués plutôt qu'aplatis dans la trace — cosmétique, la logique et le court-circuit restent corrects.
+- Pas de politique de rétention sur `InMemoryContextStore`/`InMemoryFactStore` — stores mémoire pensés pour tests/démo/prototype, pas pour une production longue durée sans adaptateur dédié.
 - Pas encore de fenêtres temporelles, de transitions d'état (FSM), ni de `engine.replay()` — voir `roadmap-vision.md`.
 
 ## Architecture et gouvernance

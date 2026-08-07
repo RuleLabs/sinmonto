@@ -24,7 +24,7 @@ Ne propose jamais d'architecture alternative aux 10 décisions ci-dessous. Ne le
 ## Conventions de nommage et de fichiers
 
 - Tous les fichiers internes sont préfixés `_` (`_core.py`, `_engine.py`...), sans exception. Seul `__init__.py` est un chemin d'import public garanti — voir `constitution-finale.md` §8.
-- Seul `from sinmonto import Symbole` est un contrat stable. Ne jamais documenter ni recommander un import qualifié par module (`sinmonto._core.Fact`).
+- Les 37 noms de `sinmonto.__all__` sont le contrat public stable (`from sinmonto import <nom>`). Ne jamais documenter ni recommander un import qualifié par module (`sinmonto._core.Fact`). (Avant 2026-08, cette ligne disait « seul `sinmonto.Symbole` » — un placeholder jamais rempli, corrigé en revue croisée.)
 - PEP8 strict. Verbes pour les actions (`evaluate`, `compile`, `commit`), noms pour les objets.
 
 ## Tests
@@ -37,11 +37,13 @@ python3 -m sinmonto._core      # depuis le dossier PARENT de sinmonto/
 
 Les imports internes sont relatifs (`from ._core import Fact`) — un module ne peut donc pas s'exécuter avec `python3 _core.py` en direct, seulement via `-m`.
 
-## État actuel (v0.1.0-rc1)
+## État actuel (v0.1.0rc2 — preview technique)
 
-Fait et testé de bout en bout : objets fondamentaux, contexte à deux phases avec persistance (`ContextStore`), trace d'explication en arbre, DSL avec opérateurs, moteur avec indexation alpha, tie-breaking déterministe, gestion d'erreur (`continue`/`fail_fast`/`fail_loud`).
+Fait et testé de bout en bout (41 tests, modules + intégration) : objets fondamentaux, contexte à deux phases avec persistance (`ContextStore`), trace d'explication en arbre, DSL avec opérateurs, moteur avec indexation alpha, tie-breaking déterministe, gestion d'erreur (`continue`/`fail_fast`/`fail_loud`).
 
-Pas encore fait, ne pas assumer que c'est câblé : file d'attente des signaux dérivés (`max_derived_depth`), mesure réelle de `duration_ms`. Voir `roadmap-vision.md` et `journal-integration.md` pour le détail et l'historique complet des décisions.
+Corrigé en revue croisée multi-IA (2026-08) — voir `journal-integration.md` : atomicité réelle des règles (snapshot/restore de `ctx`, y compris mutation directe), copie profonde du contexte, validation `Signal.entity_id`/opérateurs de condition/kind composite/retours d'action, copie défensive de `Fact._payload`, `causality` chaînée, code de sortie non nul du mini-runner sur échec.
+
+Pas encore fait, ne pas assumer que c'est câblé : file d'attente des signaux dérivés (`max_derived_depth`), mesure réelle de `duration_ms`, aplatissement des AND chaînés dans la trace. Voir `roadmap-vision.md` et `journal-integration.md` pour le détail et l'historique complet des décisions.
 
 ## Processus
 

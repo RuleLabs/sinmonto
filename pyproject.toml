@@ -4,12 +4,11 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sinmonto"
-# "sinmonto" est un nom de travail, jamais formellement verrouillé —
-# constitution-finale.md §6 le flague depuis le début comme "à trancher
-# avant la première release publique". Ce pyproject.toml existe pour la
-# raison concrète ci-dessous (imposer 3.11+), pas pour clore la question
-# du nom. À renommer avant toute publication réelle si besoin.
-version = "0.1.0-rc1"
+# Verrouillé — constitution-finale.md §6 : du fon *Sɛ́n mɔto* ("moteur de
+# règle"), vérifié sans collision commerciale ou logicielle notable. Ce
+# fichier avait un commentaire contradictoire ("jamais formellement
+# verrouillé") laissé après la décision — corrigé, 2026-08.
+version = "0.1.0rc2"
 description = "Moteur de décision événementiel, explicable, en Python pur — zéro dépendance."
 requires-python = ">=3.11"
 # Verrouillé dès constitution-finale.md §6. Raison concrète, pas théorique :

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from abc import ABC, abstractmethod
 from collections import deque
 from dataclasses import dataclass
@@ -98,7 +99,12 @@ class EvaluationContext:
         return FrozenContext(
             entity_id=self.entity_id,
             version=self._base_version + 1,
-            values=MappingProxyType(self._values.copy()),
+            # deepcopy et non .copy() : une valeur imbriquée (liste, dict)
+            # mutée en place après coup ne doit pas pouvoir corrompre
+            # rétroactivement ce FrozenContext déjà figé. .copy() est
+            # superficiel. Trouvé en revue croisée (Kimi, confirmé par
+            # ChatGPT/Qwen/Grok) — 2026-08.
+            values=MappingProxyType(copy.deepcopy(self._values)),
             causality=causality,
             timestamp=clock.now(),
         )
@@ -129,6 +135,11 @@ class InMemoryFactStore(FactStore):
     """Implémentation par défaut du cœur. Ring buffer, mémoire bornée."""
 
     def __init__(self, max_facts: int = 100_000) -> None:
+        if max_facts < 1:
+            # deque(maxlen=0) fait planter le premier append() avec un
+            # IndexError obscur (popleft sur deque vide) plutôt qu'un message
+            # clair. Trouvé en revue (DeepSeek/Qwen) — 2026-08.
+            raise ValueError("max_facts doit être >= 1")
         self._facts: dict[UUID, Fact] = {}
         self._order: deque[UUID] = deque(maxlen=max_facts)
 
@@ -256,5 +267,25 @@ if __name__ == "__main__":
     assert retrieved is frozen
     assert cstore.get_latest("autre_entite") is None
     print("  ok ContextStore persiste et récupère par entité")
+
+    # --- Test 8 : commit() protège une valeur imbriquée (deep copy) ---------
+    ctx2 = EvaluationContext(entity_id="user_nested", base_version=0)
+    nested_list = [1, 2, 3]
+    ctx2.set("items", nested_list)
+    frozen2 = ctx2.commit(causality=(), clock=clock)
+    nested_list.append(999)  # mutation externe après commit
+    assert frozen2.values["items"] == [1, 2, 3], (
+        "une mutation externe de la liste d'origine ne doit pas affecter "
+        "un FrozenContext déjà figé (deep copy à commit())"
+    )
+    print("  ok commit() protège les valeurs imbriquées par deep copy")
+
+    # --- Test 9 : InMemoryFactStore(max_facts=0) lève proprement ------------
+    try:
+        InMemoryFactStore(max_facts=0)
+        raise AssertionError("max_facts=0 devrait lever ValueError")
+    except ValueError:
+        pass
+    print("  ok InMemoryFactStore(max_facts=0) lève ValueError proprement")
 
     print("\nTous les tests _context.py ont passé.")

@@ -37,6 +37,14 @@ class Signal:
     fact: Fact | None          # None pour un timer
     signal_type: str
     timestamp: Decimal
+    entity_id: str | None = None
+    # Dérivé de fact.entity_id si non fourni et qu'un fact est présent.
+    # Obligatoire explicitement si fact est None (timer) — sinon aucun
+    # moyen de savoir à quelle entité le signal se rapporte. Si les deux
+    # sont fournis et diffèrent : ValueError (évite une évaluation sous
+    # une entité pendant que le Fact reste stocké sous une autre — trouvé
+    # en revue croisée, 2026-08). Champ absent de cette section jusqu'ici
+    # bien que déjà implémenté — corrigé.
 
 @dataclass(frozen=True, slots=True)
 class Effect:
@@ -58,7 +66,10 @@ class EvaluationResult:
                                              # réinjecté ; la séparation Signal/Fact
                                              # tient jusqu'au bout
     context_delta: Mapping[str, Any]
-    condition_results: Mapping[str, bool]
+    condition_trace: ConditionTrace | None  # l'arbre réel produit par condition.evaluate(),
+                                             # pas un condition_results plat — corrigé en
+                                             # intégration, cette section disait encore
+                                             # l'ancien champ
 
 @dataclass(frozen=True, slots=True)
 class Decision:
@@ -86,7 +97,14 @@ class EvaluationContext:
     def set(self, key: str, value: Any) -> None: ...
     def commit(self, causality: tuple[UUID, ...], clock: Clock) -> "FrozenContext":
         """version = self._base_version + 1 (auto-calculée, pas reçue en
-        paramètre) ; timestamp lu depuis clock.now(), jamais time.time()."""
+        paramètre) ; timestamp lu depuis clock.now(), jamais time.time().
+        Isolation par copy.deepcopy (pas .copy()/dict() superficiel) — une
+        valeur imbriquée mutée après coup, ou au rechargement du contexte
+        précédent au cycle suivant, ne doit pas corrompre rétroactivement
+        un FrozenContext déjà figé. Snapshot/restore autour de chaque
+        rule.evaluate() dans le moteur pour la même raison, côté mutation
+        directe (ctx.set() dans une action). Trouvé en revue croisée
+        (Kimi, ChatGPT, Qwen, Grok, Meta AI) — 2026-08."""
         ...
 
 @dataclass(frozen=True, slots=True)
@@ -95,7 +113,11 @@ class FrozenContext:
     entity_id: str
     version: int
     values: Mapping[str, Any]
-    causality: tuple[UUID, ...]
+    causality: tuple[UUID, ...]   # (fact.fact_id, *fact.causality) pour un fait,
+                                   # (signal.signal_id,) pour un timer — avant :
+                                   # fact.causality seul, ou () pour un timer,
+                                   # perdait l'origine immédiate dans les deux cas.
+                                   # Verrouillé en revue croisée — 2026-08.
     timestamp: Decimal
 ```
 
@@ -104,7 +126,12 @@ class FrozenContext:
 ```python
 @dataclass(frozen=True, slots=True)
 class ConditionTrace:
-    kind: str                              # "field" | "and" | "or" | "not"
+    kind: str                              # "field" | "and" | "or" | "not" | "none" | "error"
+                                            # "none" : règle sans condition (toujours vraie).
+                                            # "error" : règle qui a levé une exception —
+                                            # les deux déjà produits par le moteur, absents
+                                            # d'ici jusqu'à cette correction (revue croisée,
+                                            # 2026-08).
     description: str
     result: bool
     actual_value: Any = None               # rempli seulement pour kind == "field"
@@ -133,7 +160,11 @@ Court-circuit par défaut sur les `AND` (les branches non évaluées n'apparaiss
 
 ```python
 class AlphaIndex:
-    def index_rule(self, rule: Evaluable, condition: FieldCondition | CompositeCondition) -> None: ...
+    def index_rule(self, rule_id: str, condition: FieldCondition | CompositeCondition | None) -> None: ...
+    # Signature réelle : rule_id (str), pas rule (Evaluable) — plus flexible,
+    # découple l'index de l'objet Rule complet. condition accepte None (règle
+    # sans condition sur Fact, va dans _unindexed). Cette section montrait
+    # encore l'ancienne signature — corrigé, 2026-08.
     def match(self, fact: Fact) -> set[str]:
         """Sur-ensemble de rule_id candidates. Ne garantit pas le match complet."""
         ...
@@ -179,6 +210,8 @@ class CompositeCondition:
 
 **Gotcha documenté** : `Field.__eq__` est détourné pour construire une `FieldCondition`. Deux `Field` ne sont plus comparables avec `==` au sens normal, et `Field` devient non hashable — assumé, même compromis que SQLAlchemy sur `Column`.
 
+**Validation à la construction (2026-08)** : `FieldCondition.__post_init__` rejette un `operator` inconnu (`InvalidConditionError`), `CompositeCondition.__post_init__` rejette un `kind` inconnu — au moment le plus tôt possible, avant même `add_rule()`/`compile()`. Avant : un opérateur mal orthographié (ex. `"gtt"`) évaluait silencieusement `False` pour toujours, sans jamais rien lever — contraire à "fail loud". Trouvé en revue croisée (ChatGPT, Qwen, Kimi).
+
 ## 6. FactStore
 
 ```python
@@ -194,6 +227,11 @@ class FactStore(ABC):
 class InMemoryFactStore(FactStore):
     """Implémentation par défaut du cœur. Ring buffer, mémoire bornée par construction."""
     def __init__(self, max_facts: int = 100_000):
+        if max_facts < 1:
+            raise ValueError("max_facts doit être >= 1")
+            # deque(maxlen=0) faisait planter le premier append() avec un
+            # IndexError obscur plutôt qu'un message clair — trouvé en revue
+            # croisée (DeepSeek, Qwen), 2026-08.
         self._facts: dict[UUID, Fact] = {}
         self._order: deque[UUID] = deque(maxlen=max_facts)
 
@@ -218,6 +256,16 @@ class EngineAlreadyCompiledError(EngineConfigurationError): ...
 class DuplicateRuleError(EngineConfigurationError): ...
 class InvalidConditionError(EngineConfigurationError): ...
 class InvalidEffectError(EngineConfigurationError): ...
+# InvalidEffectError était définie mais jamais levée jusqu'ici. Activée
+# 2026-08 : Rule.evaluate() la lève quand une action retourne un type non
+# reconnu (silencieusement ignoré avant), ou retourne un EvaluationResult
+# directement (interdit — court-circuiterait le condition_trace déjà
+# calculé par la règle). Levée pendant evaluate(), pas à add_rule() — la
+# forme d'un retour d'action ne se connaît qu'en l'exécutant — mais reste
+# une sous-classe d'EngineConfigurationError par cohérence de nommage ;
+# capturée comme n'importe quelle exception de règle par le moteur
+# (gouvernée par rule_error_policy). Trouvé en revue croisée (ChatGPT,
+# Qwen).
 
 class EngineRuntimeError(EngineError): ...
 class RuleEvaluationError(EngineRuntimeError):
@@ -266,6 +314,8 @@ def assert_eq(actual, expected, msg=""):
         raise AssertionError(f"{msg}\nExpected: {expected}\nActual: {actual}")
 ```
 
+**Ajout 2026-08** : `test()` compte les échecs (`_failure_count`) et un handler `atexit` termine le process avec un code de sortie non nul si au moins un test a échoué — un run avec des `FAIL`/`ERROR` sortait avant avec le code 0, invisible pour un script CI. Détail d'implémentation qui a son importance : `sys.exit()` depuis un callback `atexit` est explicitement avalé par Python (« Exception ignored in atexit callback », vérifié en le testant) ; `os._exit()` après un `flush()` explicite des flux est nécessaire pour que le code de sortie soit réellement pris en compte par le process appelant. Trouvé en revue croisée (DeepSeek, Qwen).
+
 ## 10. Le cycle d'évaluation
 
 ```
@@ -276,10 +326,17 @@ def assert_eq(actual, expected, msg=""):
 5. Évaluation des règles candidates, triées par priorité (tri stable Python =
    tie-break par ordre d'insertion), effets et deltas collectés
 6. Erreur dans une règle -> capturée selon rule_error_policy (continue par défaut :
-   isolée, tracée, context_delta jamais appliqué partiellement) ; jamais silencieuse
+   isolée, tracée, context_delta jamais appliqué partiellement — y compris une
+   mutation faite directement via ctx.set() dans l'action, pas seulement le
+   context_delta retourné : snapshot de ctx pris avant chaque règle, restauré si
+   elle plante, 2026-08) ; jamais silencieuse. except Exception uniquement — pas
+   BaseException, SystemExit/KeyboardInterrupt remontent et interrompent
+   l'évaluation (constitution-finale.md Q3).
 7. Signaux dérivés (EvaluationResult.derived_signals) -> mis en FILE D'ATTENTE,
    jamais réinjectés dans le même passage. max_derived_depth = 3 par défaut.
-8. ctx.commit() -> un seul FrozenContext, stocké
+8. ctx.commit() -> un seul FrozenContext, stocké. causality = (fact.fact_id,
+   *fact.causality) pour un fait, (signal.signal_id,) pour un timer (2026-08 —
+   avant : fact.causality seul, ou () pour un timer).
 9. Decision assemblée (effects + trace + context_version + has_errors) et retournée
 10. File d'attente traitée après la fin du cycle courant, jusqu'à épuisement ou
     max_derived_depth atteint
@@ -287,7 +344,7 @@ def assert_eq(actual, expected, msg=""):
 
 ## 11. Disposition des fichiers
 
-*(voir `constitution-finale.md` §8 pour le principe verrouillé — seul `sinmonto.Symbole` est un chemin d'import garanti ; tous les fichiers internes sont préfixés `_`, sans exception)*
+*(voir `constitution-finale.md` §8 pour le principe verrouillé — les 37 noms de `sinmonto.__all__` sont le chemin d'import garanti, pas un symbole unique ; tous les fichiers internes sont préfixés `_`, sans exception)*
 
 ```
 sinmonto/
@@ -306,18 +363,8 @@ sinmonto/
 
 ## 12. Roadmap
 
-**Fait, intégré, testé de bout en bout** (`_core.py`, `_context.py`, `_dsl.py`, `_engine.py`, `_trace.py`, `_exceptions.py`, `_testing.py` — un scénario réel avec `@rule`, deux règles, une décision expliquée par sa trace, tourne sans erreur).
+**Fait, intégré, testé de bout en bout** (`_core.py`, `_context.py`, `_dsl.py`, `_engine.py`, `_trace.py`, `_exceptions.py`, `_testing.py` — un scénario réel avec `@rule`, deux règles, une décision expliquée par sa trace, tourne sans erreur). `ContextStore`/`InMemoryContextStore` (ci-dessous) : implémentés et câblés dans `_engine.py` depuis la correction d'intégration listée en tête de `_engine.py` — cette section les décrivait encore comme "priorité immédiate #1" alors qu'ils étaient déjà faits ; corrigé, 2026-08.
 
-**Priorité immédiate — trouvé en faisant tourner le code, pas prévu à l'avance :**
-
-| # | Manque | Pourquoi c'est bloquant |
-|---|---|---|
-| 1 | Persistance du contexte entre deux appels à `evaluate()` — aucun `ContextStore`, `EvaluationContext` repart de zéro à chaque cycle | Bloquant pour tout usage réel : impossible de compter "3 transactions en 5 minutes" si l'état ne survit pas d'un appel à l'autre |
-| 2 | File d'attente des signaux dérivés (`max_derived_depth`) — un signal dérivé produit aujourd'hui est perdu | Bloquant pour les cascades (alerte → scoring → blocage) |
-| 3 | `duration_ms` figé à `Decimal("0")` | Non bloquant, juste pas mesuré |
-| 4 | AND chaînés imbriqués plutôt qu'aplatis dans la trace | Cosmétique, lisibilité de l'explicabilité |
-
-Proposition d'interface pour le #1, mêmes conventions que `FactStore` :
 ```python
 class ContextStore(ABC):
     @abstractmethod
@@ -333,6 +380,17 @@ class InMemoryContextStore(ContextStore):
     def save(self, frozen: FrozenContext) -> None:
         self._latest[frozen.entity_id] = frozen
 ```
+
+**0.1.0-preview (2026-08) — bugs silencieux bloquants corrigés en revue croisée multi-IA** (ChatGPT, Grok, DeepSeek, Kimi, Qwen, Meta AI) : copie profonde du contexte (commit + rechargement), snapshot/restore autour de chaque règle (atomicité réelle, y compris mutation directe de `ctx`), `Signal.entity_id` validé contre `fact.entity_id`, opérateur/kind de condition invalide rejeté à la construction, retour d'action non reconnu levé plutôt qu'ignoré, copie défensive de `Fact._payload`, `causality` chaînée, contrat `Symbole` remplacé par la surface `__all__` réelle. Détail par bug : voir `journal-integration.md`.
+
+**Reste ouvert, assumé pour la preview — pas prévu à l'avance, documenté honnêtement :**
+
+| # | Manque | Pourquoi c'est non bloquant pour une preview |
+|---|---|---|
+| 1 | File d'attente des signaux dérivés (`max_derived_depth`) — un signal dérivé produit aujourd'hui est perdu | Décision d'architecture (récursif ? tick() séparé ?) qui mérite son propre tour dédié, pas une correction en urgence |
+| 2 | `duration_ms` figé à `Decimal("0")` | Non bloquant, juste pas mesuré |
+| 3 | AND chaînés imbriqués plutôt qu'aplatis dans la trace | Cosmétique, lisibilité de l'explicabilité |
+| 4 | Pas de politique de rétention sur `InMemoryContextStore`/`InMemoryFactStore` | Stores mémoire, usage prévu = tests/démo/prototype, pas production long-terme |
 
 **Phase suivante (confirmée, inchangée)** :
 

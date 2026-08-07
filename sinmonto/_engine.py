@@ -20,12 +20,28 @@ détail complet — problème trouvé, comment, comment corrigé) :
 - add_rule() valide le type de la condition et lève InvalidConditionError
   au lieu de laisser fuir une AttributeError brute plus tard.
 
+Revue croisée multi-IA du 2026-08 (ChatGPT, Grok, DeepSeek, Kimi, Qwen,
+Meta AI) — corrections d'atomicité et de causalité :
+- Reload de previous.values et commit() : deepcopy au lieu d'une copie
+  superficielle (une valeur imbriquée mutée ne corrompt plus rétroactivement
+  un FrozenContext déjà figé).
+- Snapshot/restore de ctx._values autour de chaque rule.evaluate() : une
+  action qui appelle ctx.set() directement puis plante ne laisse plus sa
+  mutation survivre au commit final. except Exception reste tel quel
+  (ne PAS élargir à BaseException — SystemExit/KeyboardInterrupt doivent
+  rester interruptibles ; élargir n'aurait de toute façon rien changé au
+  problème d'atomicité, la mutation a déjà eu lieu avant que l'exception
+  ne soit levée).
+- causality : (fact.fact_id, *fact.causality) pour un fait au lieu de
+  fact.causality seul ; (signal.signal_id,) pour un timer au lieu de ().
+
 Test sur téléphone : `python3 -m sinmonto._engine` depuis le dossier
 parent de sinmonto/.
 """
 
 from __future__ import annotations
 
+import copy
 import uuid
 from decimal import Decimal
 from typing import Any
@@ -156,7 +172,12 @@ class DecisionEngine:
             ctx = EvaluationContext(
                 entity_id=entity_id,
                 base_version=previous.version,
-                values=dict(previous.values),  # copie mutable, previous.values est une MappingProxyType
+                # deepcopy et non dict(...) : previous.values contient
+                # potentiellement des listes/dicts imbriqués qui, avec une
+                # copie superficielle, resteraient partagés avec le
+                # FrozenContext précédent — une mutation ici le corromprait
+                # rétroactivement. Trouvé en revue croisée (Qwen, Kimi).
+                values=copy.deepcopy(dict(previous.values)),
             )
         else:
             ctx = EvaluationContext(entity_id=entity_id)
@@ -185,9 +206,20 @@ class DecisionEngine:
         for candidate_rule in candidate_rules:
             evaluation_order.append(candidate_rule.rule_id)
 
+            # Snapshot avant l'évaluation : si l'action mute ctx directement
+            # (ctx.set(), ou mutation en place d'un objet imbriqué) puis
+            # plante, cette mutation ne doit pas survivre au commit final —
+            # "une règle qui plante n'applique jamais partiellement son
+            # context_delta" (constitution-finale.md Q5). deepcopy pour
+            # attraper aussi une mutation d'objet imbriqué, pas seulement
+            # ctx.set() au premier niveau. Trouvé en revue croisée (Kimi,
+            # Grok, Meta AI, Qwen) — 2026-08.
+            values_snapshot = copy.deepcopy(ctx._values)
+
             try:
                 result = candidate_rule.evaluate(ctx, fact)
             except Exception as exc:
+                ctx._values = values_snapshot  # rollback — tout ou rien
                 rule_exc = RuleEvaluationError(candidate_rule.rule_id, exc, signal.signal_id)
                 if rule_error_policy == "fail_loud":
                     raise rule_exc from exc
@@ -223,7 +255,14 @@ class DecisionEngine:
                 # (prochaine priorité immédiate, cf. journal-integration.md).
 
         frozen = ctx.commit(
-            causality=() if fact is None else fact.causality,
+            # Avant : () pour un timer, fact.causality seul pour un fait —
+            # perdait l'origine immédiate dans les deux cas. Verrouillé en
+            # revue croisée (proposition initiale validée par ChatGPT/Grok/
+            # Kimi/Qwen/Meta AI) — 2026-08.
+            causality=(
+                (fact.fact_id, *fact.causality) if fact is not None
+                else (signal.signal_id,)
+            ),
             clock=self._clock,
         )
         self._context_store.save(frozen)
@@ -415,6 +454,70 @@ if __name__ == "__main__":
             decision = engine.evaluate(make_signal({"x": 1}))
             assert_eq(decision.trace.evaluation_order, ("r1", "r2", "r3"))
 
+    def test_ctx_set_before_crash_does_not_survive_commit() -> None:
+        """Une action qui fait ctx.set() puis plante ne doit pas laisser
+        cette mutation dans le FrozenContext final — snapshot/restore
+        autour de chaque rule.evaluate(). Trouvé en revue croisée
+        (Kimi/Grok/Qwen/Meta AI) — 2026-08."""
+        def leaky_crash(ctx: Any, fact: Any) -> None:
+            ctx.set("leaked", True)
+            raise RuntimeError("boom")
+
+        engine = DecisionEngine()
+        engine.add_rule(Rule("leaky", priority=1, condition=None, action=leaky_crash))
+        engine.compile()
+
+        decision = engine.evaluate(make_signal({"x": 1}, entity_id="e_leak"))
+        assert_eq(decision.has_errors, True)
+        stored = engine._context_store.get_latest("e_leak")
+        assert_eq("leaked" in stored.values, False)
+
+    def test_causality_chains_fact_id_or_signal_id() -> None:
+        engine = DecisionEngine()
+        engine.add_rule(Rule("noop", condition=None, action=lambda ctx, fact: None))
+        engine.compile()
+
+        sig = make_signal({"x": 1}, entity_id="e_causal")
+        engine.evaluate(sig)
+        stored = engine._context_store.get_latest("e_causal")
+        assert_eq(stored.causality, (sig.fact.fact_id, *sig.fact.causality))
+
+        timer_sig = Signal(
+            signal_id=uuid.uuid4(), fact=None, signal_type="timer",
+            timestamp=Decimal("0"), entity_id="e_causal",
+        )
+        engine.evaluate(timer_sig)
+        stored2 = engine._context_store.get_latest("e_causal")
+        assert_eq(stored2.causality, (timer_sig.signal_id,))
+
+    def test_reload_of_previous_context_is_deep_copied() -> None:
+        """Une mutation d'une valeur imbriquée par une règle d'un cycle
+        ultérieur ne doit pas affecter rétroactivement un FrozenContext
+        déjà figé. Trouvé en revue croisée (Qwen, Kimi) — 2026-08."""
+        shared_store = InMemoryContextStore()
+
+        engine1 = DecisionEngine(context_store=shared_store)
+        engine1.add_rule(Rule(
+            "set_items", priority=10, condition=None,
+            action=lambda ctx, fact: [{"items": [1, 2, 3]}],
+        ))
+        engine1.compile()
+        engine1.evaluate(make_signal({"x": 1}, entity_id="e_reload"))
+        frozen1 = shared_store.get_latest("e_reload")
+        assert_eq(frozen1.values["items"], [1, 2, 3])
+
+        def mutate_in_place(ctx: Any, fact: Any) -> None:
+            ctx.get("items").append(999)
+            return None
+
+        engine2 = DecisionEngine(context_store=shared_store)
+        engine2.add_rule(Rule("mutate", priority=10, condition=None, action=mutate_in_place))
+        engine2.compile()
+        engine2.evaluate(make_signal({"x": 2}, entity_id="e_reload"))
+
+        # frozen1, déjà stocké, ne doit pas avoir été corrompu rétroactivement
+        assert_eq(frozen1.values["items"], [1, 2, 3])
+
     test("rule1 matche, rule2 non — vraie trace d'explicabilité présente", test_match_and_no_match)
     test("règle qui plante -> has_errors=True, les autres continuent", test_rule_crash_continue)
     test("fail_fast arrête les règles restantes", test_fail_fast_stops_remaining_rules)
@@ -424,3 +527,6 @@ if __name__ == "__main__":
     test("add_rule() rejette une condition mal typée (corrigé)", test_add_rule_rejects_invalid_condition_type)
     test("le contexte persiste entre deux signaux (corrigé)", test_context_persists_across_two_signals)
     test("tie-breaking déterministe sur 20 exécutions (corrigé)", test_tie_breaking_is_deterministic_across_many_runs)
+    test("ctx.set() avant crash ne survit pas au commit (corrigé)", test_ctx_set_before_crash_does_not_survive_commit)
+    test("causality chaîne fact_id/signal_id (corrigé)", test_causality_chains_fact_id_or_signal_id)
+    test("reload de previous.values protégé par deep copy (corrigé)", test_reload_of_previous_context_is_deep_copied)

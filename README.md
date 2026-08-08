@@ -4,7 +4,7 @@ Moteur de décision événementiel, explicable, en Python pur — zéro dépenda
 
 Du fon *Sɛ́n mɔto* ("moteur de règle"). Chaque décision porte sa propre preuve : pourquoi une règle a matché, pourquoi une autre non, dans quel ordre, avec quelles valeurs réelles au moment de l'évaluation.
 
-**Statut : `0.1.0rc2` — preview technique.** Le noyau est testé (41 tests, modules + intégration bout-en-bout) et les bugs silencieux trouvés en revue croisée multi-IA sont corrigés (voir « Limitations connues » plus bas pour ce qui reste volontairement ouvert). Reste en pre-release le temps d'un premier retour d'usage externe réel — l'API 0.x n'est pas encore figée.
+**Statut : `0.1.0rc3` — preview technique.** Le noyau est testé (43 tests, modules + intégration bout-en-bout) et les bugs silencieux trouvés en revue croisée multi-IA sont corrigés (voir « Limitations connues » plus bas pour ce qui reste volontairement ouvert). Reste en pre-release le temps d'un premier retour d'usage externe réel — l'API 0.x n'est pas encore figée.
 
 ## Pourquoi
 
@@ -12,7 +12,7 @@ Du fon *Sɛ́n mɔto* ("moteur de règle"). Chaque décision porte sa propre pre
 - **Explicabilité native** — chaque décision produit un arbre de traçage complet, pas un log ajouté après coup.
 - **Effects-as-data** — une règle ne fait jamais d'appel réseau ni d'écriture en base. Elle décrit un `Effect`. Un exécuteur séparé l'applique. Ça rend le moteur testable et rejouable par construction.
 - **État persistant par entité** — un `ContextStore` garde la mémoire d'une entité (utilisateur, appareil, transaction) d'un événement à l'autre, sans quoi aucun comptage ou score cumulé n'est possible.
-- **Déterministe** — mêmes entrées, même ordre d'enregistrement des règles ⇒ même sortie, bit à bit, y compris en cas d'égalité de priorité.
+- **Déterministe** — mêmes entrées, même ordre d'enregistrement des règles ⇒ même sortie, bit à bit, y compris en cas d'égalité de priorité. *(Exception explicite : `DecisionTrace.trace_id`, un UUID généré à chaque évaluation, non reproductible par construction — la garantie porte sur les règles matchées, les effets, l'ordre d'évaluation et l'état du contexte, pas sur les identifiants générés.)*
 
 ## Installation
 
@@ -20,7 +20,7 @@ Du fon *Sɛ́n mɔto* ("moteur de règle"). Chaque décision porte sa propre pre
 pip install sinmonto
 ```
 
-*(Package en préparation — voir `pyproject.toml`. Pour l'instant, `pip install -e .` depuis une copie locale du dépôt. Une fois publié : la version étant une pre-release (`0.1.0rc2`), `pip install sinmonto` seul ne l'installera pas — il faudra `pip install --pre sinmonto`, cohérent avec le statut preview ci-dessus.)*
+*(La version étant une pre-release (`0.1.0rc3`), un `pip install sinmonto` seul ne l'installera pas une fois publié sur PyPI — il faudra `pip install --pre sinmonto`, cohérent avec le statut preview ci-dessus. En attendant la publication : `pip install -e .` depuis une copie locale du dépôt.)*
 
 ## Exemple
 
@@ -58,7 +58,7 @@ Un deuxième signal pour `usr_99` reprend automatiquement le contexte du premier
 
 ## Statut de la revue croisée (2026-08)
 
-Le dépôt est passé par une revue de code croisée multi-IA (ChatGPT, Grok, DeepSeek, Kimi, Qwen, Meta AI). Six bugs silencieux — ceux qui trahissaient la promesse d'explicabilité/déterminisme plutôt que de simples trous documentés — ont été corrigés avant cette preview : copie profonde du contexte, atomicité réelle des règles (snapshot/restore, y compris mutation directe de `ctx`), validation `Signal.entity_id`/opérateurs de condition/retours d'action, copie défensive du payload, `causality` chaînée. Détail complet, bug par bug : [`journal-integration.md`](./journal-integration.md).
+Le dépôt est passé par une revue de code croisée multi-IA (ChatGPT, Grok, DeepSeek, Kimi, Qwen, Meta AI). Six bugs silencieux — ceux qui trahissaient la promesse d'explicabilité/déterminisme plutôt que de simples trous documentés — ont été corrigés avant cette preview : copie profonde du contexte, atomicité réelle des règles (snapshot/restore, y compris mutation directe de `ctx`), validation `Signal.entity_id`/opérateurs de condition/retours d'action, copie défensive du payload, `causality` chaînée. Un second passage (rc2 → rc3), sur le dépôt cette fois plutôt qu'un zip, a corrigé trois points additionnels : copie profonde (pas seulement superficielle) sur `Fact.payload`/`Effect.payload`, clarification que le déterminisme bit-à-bit exclut `trace_id`, et un souci de packaging sur `CLAUDE.md`. Détail complet, bug par bug : [`journal-integration.md`](./journal-integration.md).
 
 ## Limitations connues (v0.1.0-preview) — assumées, pas des bugs
 
@@ -67,6 +67,7 @@ Le dépôt est passé par une revue de code croisée multi-IA (ChatGPT, Grok, De
 - AND chaînés imbriqués plutôt qu'aplatis dans la trace — cosmétique, la logique et le court-circuit restent corrects.
 - Pas de politique de rétention sur `InMemoryContextStore`/`InMemoryFactStore` — stores mémoire pensés pour tests/démo/prototype, pas pour une production longue durée sans adaptateur dédié.
 - Pas encore de fenêtres temporelles, de transitions d'état (FSM), ni de `engine.replay()` — voir `roadmap-vision.md`.
+- `Fact.payload`/`Effect.payload`/`FrozenContext.values` sont protégés par deep copy à la construction (une mutation externe ne les affecte plus) et `MappingProxyType` en lecture seule au premier niveau — mais `MappingProxyType` ne protège que ce premier niveau : muter une valeur imbriquée *à travers* le proxy (`obj.payload["nested"]["x"] = ...`) reste possible. Pas un trou de sécurité (l'appelant externe ne peut plus rien depuis sa propre référence), mais pas un deep-freeze récursif non plus.
 
 ## Architecture et gouvernance
 

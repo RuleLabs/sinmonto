@@ -10,7 +10,28 @@ name = "sinmonto"
 # verrouillé") laissé après la décision — corrigé, 2026-08.
 version = "0.1.0rc3"
 description = "Moteur de décision événementiel, explicable, en Python pur — zéro dépendance."
+readme = "README.md"
 requires-python = ">=3.11"
+license = "Apache-2.0"
+authors = [
+    { name = "Clarel Gnimadi", email = "clarel@rulelabs.dev" },
+]
+keywords = [
+    "rules-engine", "rule-engine", "decision-engine", "event-driven",
+    "explainable", "fraud-detection", "automation", "fintech",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Office/Business :: Financial",
+    "Typing :: Typed",
+]
 # Verrouillé dès constitution-finale.md §6. Raison concrète, pas théorique :
 # @dataclass(slots=True) — utilisé sur tous les objets internes chauds —
 # n'existe qu'à partir de Python 3.10. Meta IA a dû patcher le code pour le
@@ -18,6 +39,12 @@ requires-python = ">=3.11"
 # refuse proprement sur un Python incompatible plutôt que d'échouer de façon
 # confuse au premier import.
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/RuleLabs/sinmonto"
+Repository = "https://github.com/RuleLabs/sinmonto"
+Issues = "https://github.com/RuleLabs/sinmonto/issues"
+Changelog = "https://github.com/RuleLabs/sinmonto/blob/main/journal-integration.md"
 
 [tool.hatch.build.targets.wheel]
 packages = ["sinmonto"]

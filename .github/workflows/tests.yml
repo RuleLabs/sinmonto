@@ -1,0 +1,36 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Module tests
+        run: |
+          python3 -m sinmonto._exceptions
+          python3 -m sinmonto._core
+          python3 -m sinmonto._trace
+          python3 -m sinmonto._testing
+          python3 -m sinmonto._context
+          python3 -m sinmonto._dsl
+          python3 -m sinmonto._engine
+
+      - name: End-to-end example
+        run: python3 examples/end_to_end.py

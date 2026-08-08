@@ -1,5 +1,9 @@
 # sinmonto
 
+[![tests](https://github.com/RuleLabs/sinmonto/actions/workflows/tests.yml/badge.svg)](https://github.com/RuleLabs/sinmonto/actions/workflows/tests.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](pyproject.toml)
+
 Moteur de décision événementiel, explicable, en Python pur — zéro dépendance.
 
 Du fon *Sɛ́n mɔto* ("moteur de règle"). Chaque décision porte sa propre preuve : pourquoi une règle a matché, pourquoi une autre non, dans quel ordre, avec quelles valeurs réelles au moment de l'évaluation.

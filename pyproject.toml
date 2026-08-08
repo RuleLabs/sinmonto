@@ -44,7 +44,7 @@ dependencies = []
 Homepage = "https://github.com/RuleLabs/sinmonto"
 Repository = "https://github.com/RuleLabs/sinmonto"
 Issues = "https://github.com/RuleLabs/sinmonto/issues"
-Changelog = "https://github.com/RuleLabs/sinmonto/blob/main/journal-integration.md"
+Changelog = "https://github.com/RuleLabs/sinmonto/blob/main/docs/journal-integration.md"
 
 [tool.hatch.build.targets.wheel]
 packages = ["sinmonto"]

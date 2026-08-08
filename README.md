@@ -58,7 +58,7 @@ Un deuxième signal pour `usr_99` reprend automatiquement le contexte du premier
 
 ## Statut de la revue croisée (2026-08)
 
-Le dépôt est passé par une revue de code croisée multi-IA (ChatGPT, Grok, DeepSeek, Kimi, Qwen, Meta AI). Six bugs silencieux — ceux qui trahissaient la promesse d'explicabilité/déterminisme plutôt que de simples trous documentés — ont été corrigés avant cette preview : copie profonde du contexte, atomicité réelle des règles (snapshot/restore, y compris mutation directe de `ctx`), validation `Signal.entity_id`/opérateurs de condition/retours d'action, copie défensive du payload, `causality` chaînée. Un second passage (rc2 → rc3), sur le dépôt cette fois plutôt qu'un zip, a corrigé trois points additionnels : copie profonde (pas seulement superficielle) sur `Fact.payload`/`Effect.payload`, clarification que le déterminisme bit-à-bit exclut `trace_id`, et un souci de packaging sur `CLAUDE.md`. Détail complet, bug par bug : [`journal-integration.md`](./journal-integration.md).
+Le dépôt est passé par une revue de code croisée multi-IA (ChatGPT, Grok, DeepSeek, Kimi, Qwen, Meta AI). Six bugs silencieux — ceux qui trahissaient la promesse d'explicabilité/déterminisme plutôt que de simples trous documentés — ont été corrigés avant cette preview : copie profonde du contexte, atomicité réelle des règles (snapshot/restore, y compris mutation directe de `ctx`), validation `Signal.entity_id`/opérateurs de condition/retours d'action, copie défensive du payload, `causality` chaînée. Un second passage (rc2 → rc3), sur le dépôt cette fois plutôt qu'un zip, a corrigé trois points additionnels : copie profonde (pas seulement superficielle) sur `Fact.payload`/`Effect.payload`, clarification que le déterminisme bit-à-bit exclut `trace_id`, et un souci de packaging sur `CLAUDE.md`. Détail complet, bug par bug : [`journal-integration.md`](./docs/journal-integration.md).
 
 ## Limitations connues (v0.1.0-preview) — assumées, pas des bugs
 
@@ -66,17 +66,17 @@ Le dépôt est passé par une revue de code croisée multi-IA (ChatGPT, Grok, De
 - `RuleTrace.duration_ms` est toujours `Decimal("0")` — pas de mesure réelle du temps d'exécution.
 - AND chaînés imbriqués plutôt qu'aplatis dans la trace — cosmétique, la logique et le court-circuit restent corrects.
 - Pas de politique de rétention sur `InMemoryContextStore`/`InMemoryFactStore` — stores mémoire pensés pour tests/démo/prototype, pas pour une production longue durée sans adaptateur dédié.
-- Pas encore de fenêtres temporelles, de transitions d'état (FSM), ni de `engine.replay()` — voir `roadmap-vision.md`.
+- Pas encore de fenêtres temporelles, de transitions d'état (FSM), ni de `engine.replay()` — voir [`docs/roadmap-vision.md`](./docs/roadmap-vision.md).
 - `Fact.payload`/`Effect.payload`/`FrozenContext.values` sont protégés par deep copy à la construction (une mutation externe ne les affecte plus) et `MappingProxyType` en lecture seule au premier niveau — mais `MappingProxyType` ne protège que ce premier niveau : muter une valeur imbriquée *à travers* le proxy (`obj.payload["nested"]["x"] = ...`) reste possible. Pas un trou de sécurité (l'appelant externe ne peut plus rien depuis sa propre référence), mais pas un deep-freeze récursif non plus.
 
 ## Architecture et gouvernance
 
 Ce projet est construit avec une discipline de documentation stricte, en revue croisée avec plusieurs IA :
 
-- [`constitution-finale.md`](./constitution-finale.md) — principes architecturaux verrouillés, stables à travers toutes les versions.
-- [`constitution-noyau.md`](./constitution-noyau.md) — spécification technique complète de ce que le noyau construit.
-- [`journal-integration.md`](./journal-integration.md) — historique honnête : ce qui a été tenté, les bugs trouvés, comment ils ont été corrigés.
-- [`roadmap-vision.md`](./roadmap-vision.md) — ce qui n'est pas encore construit, et pourquoi ce n'est pas encore le moment.
+- [`constitution-finale.md`](./docs/constitution-finale.md) — principes architecturaux verrouillés, stables à travers toutes les versions.
+- [`constitution-noyau.md`](./docs/constitution-noyau.md) — spécification technique complète de ce que le noyau construit.
+- [`journal-integration.md`](./docs/journal-integration.md) — historique honnête : ce qui a été tenté, les bugs trouvés, comment ils ont été corrigés.
+- [`roadmap-vision.md`](./docs/roadmap-vision.md) — ce qui n'est pas encore construit, et pourquoi ce n'est pas encore le moment.
 
 ## Licence
 

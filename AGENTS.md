@@ -4,7 +4,7 @@ Instructions pour toute IA (Claude Code, Cursor, Copilot, ou autre) travaillant 
 
 ## Ce projet en une phrase
 
-`sinmonto` — moteur de décision événementiel, explicable, en Python pur, zéro dépendance. Voir `README.md` pour l'usage, `constitution-finale.md` et `constitution-noyau.md` pour l'architecture complète.
+`sinmonto` — moteur de décision événementiel, explicable, en Python pur, zéro dépendance. Voir `README.md` pour l'usage, `docs/constitution-finale.md` et `docs/constitution-noyau.md` pour l'architecture complète.
 
 ## Règles non négociables
 
@@ -23,7 +23,7 @@ Ne propose jamais d'architecture alternative aux 10 décisions ci-dessous. Ne le
 
 ## Conventions de nommage et de fichiers
 
-- Tous les fichiers internes sont préfixés `_` (`_core.py`, `_engine.py`...), sans exception. Seul `__init__.py` est un chemin d'import public garanti — voir `constitution-finale.md` §8.
+- Tous les fichiers internes sont préfixés `_` (`_core.py`, `_engine.py`...), sans exception. Seul `__init__.py` est un chemin d'import public garanti — voir `docs/constitution-finale.md` §8.
 - Les 37 noms de `sinmonto.__all__` sont le contrat public stable (`from sinmonto import <nom>`). Ne jamais documenter ni recommander un import qualifié par module (`sinmonto._core.Fact`). (Avant 2026-08, cette ligne disait « seul `sinmonto.Symbole` » — un placeholder jamais rempli, corrigé en revue croisée.)
 - PEP8 strict. Verbes pour les actions (`evaluate`, `compile`, `commit`), noms pour les objets.
 
@@ -41,10 +41,10 @@ Les imports internes sont relatifs (`from ._core import Fact`) — un module ne 
 
 Fait et testé de bout en bout (41 tests, modules + intégration) : objets fondamentaux, contexte à deux phases avec persistance (`ContextStore`), trace d'explication en arbre, DSL avec opérateurs, moteur avec indexation alpha, tie-breaking déterministe, gestion d'erreur (`continue`/`fail_fast`/`fail_loud`).
 
-Corrigé en revue croisée multi-IA (2026-08) — voir `journal-integration.md` : atomicité réelle des règles (snapshot/restore de `ctx`, y compris mutation directe), copie profonde du contexte, validation `Signal.entity_id`/opérateurs de condition/kind composite/retours d'action, copie défensive de `Fact._payload`, `causality` chaînée, code de sortie non nul du mini-runner sur échec.
+Corrigé en revue croisée multi-IA (2026-08) — voir `docs/journal-integration.md` : atomicité réelle des règles (snapshot/restore de `ctx`, y compris mutation directe), copie profonde du contexte, validation `Signal.entity_id`/opérateurs de condition/kind composite/retours d'action, copie défensive de `Fact._payload`, `causality` chaînée, code de sortie non nul du mini-runner sur échec.
 
-Pas encore fait, ne pas assumer que c'est câblé : file d'attente des signaux dérivés (`max_derived_depth`), mesure réelle de `duration_ms`, aplatissement des AND chaînés dans la trace. Voir `roadmap-vision.md` et `journal-integration.md` pour le détail et l'historique complet des décisions.
+Pas encore fait, ne pas assumer que c'est câblé : file d'attente des signaux dérivés (`max_derived_depth`), mesure réelle de `duration_ms`, aplatissement des AND chaînés dans la trace. Voir `docs/roadmap-vision.md` et `docs/journal-integration.md` pour le détail et l'historique complet des décisions.
 
 ## Processus
 
-Toute évolution architecturale (pas une simple implémentation) passe par `contrat-vivant-gabarit.md` — mission écrite, rapport structuré en retour, synthèse avant verrouillage. Ne pas modifier `constitution-finale.md` unilatéralement.
+Toute évolution architecturale (pas une simple implémentation) passe par `docs/contrat-vivant-gabarit.md` — mission écrite, rapport structuré en retour, synthèse avant verrouillage. Ne pas modifier `docs/constitution-finale.md` unilatéralement.

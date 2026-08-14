@@ -7,10 +7,10 @@ ce qui évite un cycle d'import (_context.py a besoin de Fact, défini ici).
 Voir constitution-noyau.md §11 — c'est exactement le "Piège 1" que Kimi a
 signalé lors de la revue Q6.
 
-Pour tester ce fichier isolément sur téléphone, exécuter depuis le dossier
-PARENT de sinmonto/ : `python3 -m sinmonto._core` (pas
-`python3 _core.py` directement — l'import relatif de _testing a besoin que
-Python connaisse le package parent).
+Les tests pour ce module sont dans tests/test_core.py et
+tests/test_regressions.py (déplacés hors du package en Phase 3 de la
+restructuration, 2026-08) : `python3 tests/run_all.py test_core` depuis la
+racine du dépôt.
 """
 
 from __future__ import annotations
@@ -192,117 +192,3 @@ class _EngineJSONEncoder(json.JSONEncoder):
         return super().default(obj)
 
 
-if __name__ == "__main__":
-    import uuid
-
-    from ._testing import assert_eq, test
-
-    def test_fact_payload_is_read_only() -> None:
-        f = Fact(
-            fact_id=uuid.uuid4(),
-            entity_id="user:1",
-            fact_type="transaction",
-            _payload={"amount": 1500},
-            timestamp=Decimal("0"),
-        )
-        assert_eq(f.payload["amount"], 1500)
-        try:
-            f.payload["amount"] = 9999  # type: ignore[index]
-        except TypeError:
-            pass
-        else:
-            raise AssertionError("payload should be read-only")
-
-    def test_manual_clock() -> None:
-        clock = ManualClock(Decimal("100"))
-        assert_eq(clock.now(), Decimal("100"))
-        clock.set(Decimal("200"))
-        assert_eq(clock.now(), Decimal("200"))
-
-    def test_json_encoder_handles_decimal_and_uuid() -> None:
-        uid = uuid.uuid4()
-        encoded = json.dumps({"amount": Decimal("10.5"), "id": uid}, cls=_EngineJSONEncoder)
-        assert_eq(json.loads(encoded)["amount"]["value"], "10.5")
-        assert_eq(json.loads(encoded)["id"]["value"], str(uid))
-
-    def test_signal_entity_id_derived_from_fact() -> None:
-        f = Fact(
-            fact_id=uuid.uuid4(), entity_id="user:42", fact_type="t",
-            _payload={}, timestamp=Decimal("0"),
-        )
-        s = Signal(signal_id=uuid.uuid4(), fact=f, signal_type="t", timestamp=Decimal("0"))
-        assert_eq(s.entity_id, "user:42")
-
-    def test_signal_requires_explicit_entity_id_without_fact() -> None:
-        try:
-            Signal(signal_id=uuid.uuid4(), fact=None, signal_type="timer", timestamp=Decimal("0"))
-        except ValueError:
-            pass
-        else:
-            raise AssertionError("un signal timer sans entity_id explicite devrait lever")
-
-        # avec entity_id explicite, ça marche
-        s = Signal(
-            signal_id=uuid.uuid4(), fact=None, signal_type="timer",
-            timestamp=Decimal("0"), entity_id="user:99",
-        )
-        assert_eq(s.entity_id, "user:99")
-
-    def test_fact_payload_defensive_copy() -> None:
-        original = {"amount": 100}
-        f = Fact(
-            fact_id=uuid.uuid4(), entity_id="user:1", fact_type="t",
-            _payload=original, timestamp=Decimal("0"),
-        )
-        original["amount"] = 9999
-        assert_eq(f.payload["amount"], 100)
-
-    def test_fact_payload_defensive_copy_is_deep() -> None:
-        original = {"items": [1, 2, 3]}
-        f = Fact(
-            fact_id=uuid.uuid4(), entity_id="user:1", fact_type="t",
-            _payload=original, timestamp=Decimal("0"),
-        )
-        original["items"].append(999)  # mutation d'une valeur imbriquée
-        assert_eq(f.payload["items"], [1, 2, 3])
-
-    def test_effect_payload_is_protected() -> None:
-        original = {"reason": "x", "nested": [1, 2]}
-        e = Effect(effect_type="ALERT", payload=original, rule_id="r1")
-        original["reason"] = "changed"
-        original["nested"].append(999)
-        assert_eq(e.payload["reason"], "x")
-        assert_eq(e.payload["nested"], [1, 2])
-        try:
-            e.payload["reason"] = "hack"  # type: ignore[index]
-        except TypeError:
-            pass
-        else:
-            raise AssertionError("Effect.payload devrait être en lecture seule")
-
-    def test_signal_entity_id_must_match_fact() -> None:
-        f = Fact(
-            fact_id=uuid.uuid4(), entity_id="user:A", fact_type="t",
-            _payload={}, timestamp=Decimal("0"),
-        )
-        try:
-            Signal(
-                signal_id=uuid.uuid4(), fact=f, signal_type="t",
-                timestamp=Decimal("0"), entity_id="user:B",
-            )
-        except ValueError:
-            pass
-        else:
-            raise AssertionError(
-                "entity_id explicite en désaccord avec fact.entity_id devrait lever"
-            )
-
-    test("Fact.payload est réellement en lecture seule", test_fact_payload_is_read_only)
-    test("ManualClock get/set", test_manual_clock)
-    test("_EngineJSONEncoder gère Decimal et UUID", test_json_encoder_handles_decimal_and_uuid)
-    test("Signal.entity_id dérivé du fact", test_signal_entity_id_derived_from_fact)
-    test("Signal timer exige entity_id explicite", test_signal_requires_explicit_entity_id_without_fact)
-    test("Fact.payload copié défensivement à la construction", test_fact_payload_defensive_copy)
-    test("Fact.payload : la copie défensive est profonde (valeurs imbriquées)", test_fact_payload_defensive_copy_is_deep)
-    test("Effect.payload protégé (deep copy + lecture seule)", test_effect_payload_is_protected)
-    test("Signal.entity_id explicite incohérent avec fact.entity_id lève", test_signal_entity_id_must_match_fact)

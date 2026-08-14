@@ -52,27 +52,22 @@ cd sinmonto
 pip install -e .
 ```
 
-Zéro dépendance de runtime ni de test — pas de `pytest`. Chaque module a son
-propre bloc `if __name__ == "__main__":` qui fait tourner le mini-runner
-interne (`_testing.py`). Depuis la racine du dépôt :
+Zéro dépendance de runtime ni de test — pas de `pytest`. Les tests vivent
+dans `tests/`, séparés du code source. Depuis la racine du dépôt :
 
 ```bash
-python3 -m sinmonto._exceptions
-python3 -m sinmonto._core
-python3 -m sinmonto._trace
-python3 -m sinmonto._testing
-python3 -m sinmonto._context
-python3 -m sinmonto._dsl
-python3 -m sinmonto._engine
+python3 tests/run_all.py
 python3 examples/end_to_end.py
 ```
 
-*(`./scripts/test_all.sh` fait tourner cette liste en une commande.)*
+*(`./scripts/test_all.sh` fait tourner les deux en une commande.)*
 
-Les imports internes sont relatifs : un module ne s'exécute pas avec
-`python3 sinmonto/_core.py` en direct, uniquement via `python3 -m sinmonto._core`
-depuis le dossier **parent** de `sinmonto/`. Un échec sort avec un code non
-nul (`os._exit(1)`), exploitable en CI.
+Pour déboguer un seul module : `python3 tests/run_all.py test_core`.
+
+Les fichiers de `tests/` importent `sinmonto` normalement (`pip install -e .`
+rend ça possible) ; `tests/run_all.py` ajoute aussi la racine du dépôt à
+`sys.path` en secours si l'install éditable a été oubliée. Un échec sort
+avec un code non nul (`os._exit(1)`), exploitable en CI.
 
 ## Comment proposer un changement
 

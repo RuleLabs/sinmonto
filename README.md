@@ -8,7 +8,7 @@ Moteur de décision événementiel, explicable, en Python pur — zéro dépenda
 
 Du fon *Sɛ́n mɔto* ("moteur de règle"). Chaque décision porte sa propre preuve : pourquoi une règle a matché, pourquoi une autre non, dans quel ordre, avec quelles valeurs réelles au moment de l'évaluation.
 
-**Statut : `0.1.0rc3` — preview technique.** Le noyau est testé (43 tests, modules + intégration bout-en-bout) et les bugs silencieux trouvés en revue croisée multi-IA sont corrigés (voir « Limitations connues » plus bas pour ce qui reste volontairement ouvert). Reste en pre-release le temps d'un premier retour d'usage externe réel — l'API 0.x n'est pas encore figée.
+**Statut : `0.1.0rc3` — preview technique.** Le noyau est testé (42 tests dans `tests/` + intégration bout-en-bout) et les bugs silencieux trouvés en revue croisée multi-IA sont corrigés (voir « Limitations connues » plus bas pour ce qui reste volontairement ouvert). Reste en pre-release le temps d'un premier retour d'usage externe réel — l'API 0.x n'est pas encore figée.
 
 ## Pourquoi
 

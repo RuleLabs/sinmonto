@@ -29,19 +29,20 @@ Ne propose jamais d'architecture alternative aux 10 décisions ci-dessous. Ne le
 
 ## Tests
 
-Chaque module a son propre bloc `if __name__ == "__main__":` en bas de fichier, zéro dépendance de test (`_testing.py`, mini-runner interne). Pour tester un module isolément :
+Les tests vivent dans `tests/`, séparés du code source (Phase 3 de la restructuration, 2026-08) — pas dans les modules `sinmonto/*.py`. Zéro dépendance de test (`tests/run_all.py`, runner interne à découverte automatique, pas livré dans le package installé).
 
 ```bash
-python3 -m sinmonto._core      # depuis le dossier PARENT de sinmonto/
+python3 tests/run_all.py              # tout, depuis la racine du dépôt
+python3 tests/run_all.py test_core    # un seul module, pour déboguer
 ```
 
-Les imports internes sont relatifs (`from ._core import Fact`) — un module ne peut donc pas s'exécuter avec `python3 _core.py` en direct, seulement via `-m`.
+Les imports internes sont relatifs (`from ._core import Fact`) — un module ne peut donc pas s'exécuter avec `python3 sinmonto/_core.py` en direct. `pip install -e .` (voir `CONTRIBUTING.md`) rend `sinmonto` importable depuis `tests/` ; `run_all.py` ajoute aussi la racine du dépôt à `sys.path` en secours.
 
-## État actuel (v0.1.0rc2 — preview technique)
+## État actuel (v0.1.0rc3 — preview technique)
 
-Fait et testé de bout en bout (41 tests, modules + intégration) : objets fondamentaux, contexte à deux phases avec persistance (`ContextStore`), trace d'explication en arbre, DSL avec opérateurs, moteur avec indexation alpha, tie-breaking déterministe, gestion d'erreur (`continue`/`fail_fast`/`fail_loud`).
+Fait et testé de bout en bout (42 tests, `tests/` + intégration) : objets fondamentaux, contexte à deux phases avec persistance (`ContextStore`), trace d'explication en arbre, DSL avec opérateurs, moteur avec indexation alpha, tie-breaking déterministe, gestion d'erreur (`continue`/`fail_fast`/`fail_loud`).
 
-Corrigé en revue croisée multi-IA (2026-08) — voir `docs/journal-integration.md` : atomicité réelle des règles (snapshot/restore de `ctx`, y compris mutation directe), copie profonde du contexte, validation `Signal.entity_id`/opérateurs de condition/kind composite/retours d'action, copie défensive de `Fact._payload`, `causality` chaînée, code de sortie non nul du mini-runner sur échec.
+Corrigé en revue croisée multi-IA (2026-08) — voir `docs/journal-integration.md` : atomicité réelle des règles (snapshot/restore de `ctx`, y compris mutation directe), copie profonde du contexte (y compris `Fact`/`Effect.payload`), validation `Signal.entity_id`/opérateurs de condition/kind composite/retours d'action, `causality` chaînée, code de sortie non nul du runner de tests sur échec.
 
 Pas encore fait, ne pas assumer que c'est câblé : file d'attente des signaux dérivés (`max_derived_depth`), mesure réelle de `duration_ms`, aplatissement des AND chaînés dans la trace. Voir `docs/roadmap-vision.md` et `docs/journal-integration.md` pour le détail et l'historique complet des décisions.
 

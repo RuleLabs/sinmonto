@@ -5,13 +5,7 @@ set -e
 
 cd "$(dirname "$0")/.."
 
-python3 -m sinmonto._exceptions
-python3 -m sinmonto._core
-python3 -m sinmonto._trace
-python3 -m sinmonto._testing
-python3 -m sinmonto._context
-python3 -m sinmonto._dsl
-python3 -m sinmonto._engine
+python3 tests/run_all.py
 python3 examples/end_to_end.py
 
 echo ""

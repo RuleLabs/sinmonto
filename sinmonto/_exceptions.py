@@ -79,19 +79,3 @@ class BackendError(EngineError):
     """
 
 
-if __name__ == "__main__":
-    assert issubclass(EngineNotCompiledError, EngineConfigurationError)
-    assert issubclass(EngineAlreadyCompiledError, EngineConfigurationError)
-    assert issubclass(EngineConfigurationError, EngineError)
-    assert issubclass(RuleEvaluationError, EngineRuntimeError)
-    assert issubclass(EngineRuntimeError, EngineError)
-    assert issubclass(BackendError, EngineError)
-
-    original = ValueError("boom")
-    try:
-        raise RuleEvaluationError("r1", original, "sig-123")  # type: ignore[arg-type]
-    except RuleEvaluationError as e:
-        assert e.rule_id == "r1"
-        assert e.__cause__ is original
-
-    print("_exceptions.py: ok")

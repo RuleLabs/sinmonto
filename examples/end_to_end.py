@@ -16,8 +16,8 @@ from uuid import uuid4
 
 # Imports depuis la surface publique officielle (__init__.py) — c'est le
 # seul chemin d'import garanti (voir constitution-finale.md §8). Cet exemple
-# utilise donc des `assert` simples plutôt que sinmonto._testing, qui est un
-# module interne. Trouvé en revue (Qwen) — 2026-08.
+# utilise donc des `assert` simples plutôt qu'un import interne. Trouvé en
+# revue (Qwen) — 2026-08.
 from sinmonto import (
     DecisionEngine,
     Effect,

@@ -22,15 +22,8 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Module tests
-        run: |
-          python3 -m sinmonto._exceptions
-          python3 -m sinmonto._core
-          python3 -m sinmonto._trace
-          python3 -m sinmonto._testing
-          python3 -m sinmonto._context
-          python3 -m sinmonto._dsl
-          python3 -m sinmonto._engine
+      - name: Run test suite
+        run: python3 tests/run_all.py
 
       - name: End-to-end example
         run: python3 examples/end_to_end.py

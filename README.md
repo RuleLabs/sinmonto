@@ -73,6 +73,10 @@ Le dépôt est passé par une revue de code croisée multi-IA (ChatGPT, Grok, De
 - Pas encore de fenêtres temporelles, de transitions d'état (FSM), ni de `engine.replay()` — voir [`docs/roadmap-vision.md`](./docs/roadmap-vision.md).
 - `Fact.payload`/`Effect.payload`/`FrozenContext.values` sont protégés par deep copy à la construction (une mutation externe ne les affecte plus) et `MappingProxyType` en lecture seule au premier niveau — mais `MappingProxyType` ne protège que ce premier niveau : muter une valeur imbriquée *à travers* le proxy (`obj.payload["nested"]["x"] = ...`) reste possible. Pas un trou de sécurité (l'appelant externe ne peut plus rien depuis sa propre référence), mais pas un deep-freeze récursif non plus.
 
+## Utiliser sinmonto avec l'aide d'une IA
+
+[`UTILISATION.md`](./UTILISATION.md) — un contributeur qui *utilise* sinmonto (pas qui modifie son noyau) devrait commencer là, humain ou IA. Ça évite de deviner l'API — un problème réel : plusieurs IA sans accès au dépôt ont inventé des noms de classes plausibles mais fictifs en travaillant sur ce projet. Pour contribuer au noyau lui-même, voir [`CONTRIBUTING.md`](./CONTRIBUTING.md) et [`AGENTS.md`](./AGENTS.md) à la place.
+
 ## Architecture et gouvernance
 
 Ce projet est construit avec une discipline de documentation stricte, en revue croisée avec plusieurs IA :

@@ -2,6 +2,8 @@
 
 Instructions pour toute IA (Claude Code, Cursor, Copilot, ou autre) travaillant sur ce dépôt. Lis ceci avant de toucher au code.
 
+**Ce fichier est pour modifier `sinmonto` lui-même.** Si tu dois juste *utiliser* la bibliothèque dans un autre projet (écrire des règles, appeler `evaluate()`...), lis [`UTILISATION.md`](./UTILISATION.md) à la place — plus court, orienté API, pas gouvernance du dépôt.
+
 ## Ce projet en une phrase
 
 `sinmonto` — moteur de décision événementiel, explicable, en Python pur, zéro dépendance. Voir `README.md` pour l'usage, `docs/constitution-finale.md` et `docs/constitution-noyau.md` pour l'architecture complète.

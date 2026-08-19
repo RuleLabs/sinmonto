@@ -6,7 +6,7 @@ Instructions pour toute IA (Claude Code, Cursor, Copilot, ou autre) travaillant 
 
 ## Ce projet en une phrase
 
-`sinmonto` — moteur de décision événementiel, explicable, en Python pur, zéro dépendance. Voir `README.md` pour l'usage, `docs/constitution-finale.md` et `docs/constitution-noyau.md` pour l'architecture complète.
+`sinmonto` — moteur de décision événementiel, explicable, en Python pur, zéro dépendance. Voir `docs/fr/README.md` pour l'usage (le `README.md` à la racine est en anglais depuis la traduction FR/EN), `docs/constitution-finale.md` et `docs/constitution-noyau.md` pour l'architecture complète.
 
 ## Règles non négociables
 
@@ -38,7 +38,7 @@ python3 tests/run_all.py              # tout, depuis la racine du dépôt
 python3 tests/run_all.py test_core    # un seul module, pour déboguer
 ```
 
-Les imports internes sont relatifs (`from ._core import Fact`) — un module ne peut donc pas s'exécuter avec `python3 sinmonto/_core.py` en direct. `pip install -e .` (voir `CONTRIBUTING.md`) rend `sinmonto` importable depuis `tests/` ; `run_all.py` ajoute aussi la racine du dépôt à `sys.path` en secours.
+Les imports internes sont relatifs (`from ._core import Fact`) — un module ne peut donc pas s'exécuter avec `python3 sinmonto/_core.py` en direct. `pip install -e .` (voir `docs/fr/CONTRIBUTING.md`) rend `sinmonto` importable depuis `tests/` ; `run_all.py` ajoute aussi la racine du dépôt à `sys.path` en secours.
 
 ## État actuel (v0.1.0rc3 — preview technique)
 

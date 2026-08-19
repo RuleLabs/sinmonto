@@ -1,22 +1,24 @@
 # sinmonto
 
+*[Version française](./docs/fr/README.md)*
+
 [![tests](https://github.com/RuleLabs/sinmonto/actions/workflows/tests.yml/badge.svg)](https://github.com/RuleLabs/sinmonto/actions/workflows/tests.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](pyproject.toml)
 
-Moteur de décision événementiel, explicable, en Python pur — zéro dépendance.
+Explainable, deterministic event-driven decision engine, in pure Python — zero dependencies.
 
-Du fon *Sɛ́n mɔto* ("moteur de règle"). Chaque décision porte sa propre preuve : pourquoi une règle a matché, pourquoi une autre non, dans quel ordre, avec quelles valeurs réelles au moment de l'évaluation.
+From the Fon *Sɛ́n mɔto* ("rule engine"). Every decision carries its own proof: why a rule matched, why another didn't, in what order, with what actual values at the time of evaluation.
 
-**Statut : `0.1.0rc3` — preview technique.** Le noyau est testé (42 tests dans `tests/` + intégration bout-en-bout) et les bugs silencieux trouvés en revue croisée multi-IA sont corrigés (voir « Limitations connues » plus bas pour ce qui reste volontairement ouvert). Reste en pre-release le temps d'un premier retour d'usage externe réel — l'API 0.x n'est pas encore figée.
+**Status: `0.1.0rc3` — technical preview.** The core is tested (42 tests in `tests/` + end-to-end integration) and the silent bugs found in multi-AI cross-review are fixed (see "Known limitations" below for what's deliberately left open). Staying in pre-release until a first round of real external usage feedback — the 0.x API isn't locked yet.
 
-## Pourquoi
+## Why
 
-- **Zéro dépendance** — s'installe et s'audite n'importe où, sans arbre de dépendances à faire valider par une équipe sécurité.
-- **Explicabilité native** — chaque décision produit un arbre de traçage complet, pas un log ajouté après coup.
-- **Effects-as-data** — une règle ne fait jamais d'appel réseau ni d'écriture en base. Elle décrit un `Effect`. Un exécuteur séparé l'applique. Ça rend le moteur testable et rejouable par construction.
-- **État persistant par entité** — un `ContextStore` garde la mémoire d'une entité (utilisateur, appareil, transaction) d'un événement à l'autre, sans quoi aucun comptage ou score cumulé n'est possible.
-- **Déterministe** — mêmes entrées, même ordre d'enregistrement des règles ⇒ même sortie, bit à bit, y compris en cas d'égalité de priorité. *(Exception explicite : `DecisionTrace.trace_id`, un UUID généré à chaque évaluation, non reproductible par construction — la garantie porte sur les règles matchées, les effets, l'ordre d'évaluation et l'état du contexte, pas sur les identifiants générés.)*
+- **Zero dependencies** — installs and audits anywhere, no dependency tree for a security team to sign off on.
+- **Native explainability** — every decision produces a complete trace tree, not a log bolted on afterward.
+- **Effects-as-data** — a rule never makes a network call or a database write. It describes an `Effect`. A separate executor applies it. This makes the engine testable and replayable by construction.
+- **Per-entity persistent state** — a `ContextStore` keeps an entity's memory (user, device, transaction) from one event to the next, without which no running count or cumulative score is possible.
+- **Deterministic** — same inputs, same rule-registration order ⇒ same output, bit for bit, including on priority ties. *(Explicit exception: `DecisionTrace.trace_id`, a UUID generated on every evaluation, not reproducible by construction — the guarantee covers matched rules, effects, evaluation order, and context state, not generated identifiers.)*
 
 ## Installation
 
@@ -24,9 +26,9 @@ Du fon *Sɛ́n mɔto* ("moteur de règle"). Chaque décision porte sa propre pre
 pip install sinmonto
 ```
 
-*(La version étant une pre-release (`0.1.0rc3`), un `pip install sinmonto` seul ne l'installera pas une fois publié sur PyPI — il faudra `pip install --pre sinmonto`, cohérent avec le statut preview ci-dessus. En attendant la publication : `pip install -e .` depuis une copie locale du dépôt.)*
+*(Since the version is a pre-release (`0.1.0rc3`), a plain `pip install sinmonto` won't pick it up once published on PyPI — you'll need `pip install --pre sinmonto`, consistent with the preview status above. Until then: `pip install -e .` from a local copy of the repo.)*
 
-## Exemple
+## Example
 
 ```python
 from decimal import Decimal
@@ -58,34 +60,34 @@ print(trace.condition_tree.description, "->", trace.condition_tree.result)
 # amount gt 1000 -> True
 ```
 
-Un deuxième signal pour `usr_99` reprend automatiquement le contexte du premier — voir [`examples/end_to_end.py`](./examples/end_to_end.py) et le `ContextStore`.
+A second signal for `usr_99` automatically picks up the context from the first — see [`examples/end_to_end.py`](./examples/end_to_end.py) and `ContextStore`.
 
-## Statut de la revue croisée (2026-08)
+## Cross-review status (2026-08)
 
-Le dépôt est passé par une revue de code croisée multi-IA (ChatGPT, Grok, DeepSeek, Kimi, Qwen, Meta AI). Six bugs silencieux — ceux qui trahissaient la promesse d'explicabilité/déterminisme plutôt que de simples trous documentés — ont été corrigés avant cette preview : copie profonde du contexte, atomicité réelle des règles (snapshot/restore, y compris mutation directe de `ctx`), validation `Signal.entity_id`/opérateurs de condition/retours d'action, copie défensive du payload, `causality` chaînée. Un second passage (rc2 → rc3), sur le dépôt cette fois plutôt qu'un zip, a corrigé trois points additionnels : copie profonde (pas seulement superficielle) sur `Fact.payload`/`Effect.payload`, clarification que le déterminisme bit-à-bit exclut `trace_id`, et un souci de packaging sur `CLAUDE.md`. Détail complet, bug par bug : [`journal-integration.md`](./docs/journal-integration.md).
+The repo went through a multi-AI code cross-review (ChatGPT, Grok, DeepSeek, Kimi, Qwen, Meta AI). Six silent bugs — the ones that betrayed the explainability/determinism promise rather than simple documented gaps — were fixed before this preview: deep-copied context, real rule atomicity (snapshot/restore, including direct `ctx` mutation), `Signal.entity_id`/condition-operator/action-return validation, defensive payload copying, chained `causality`. A second pass (rc2 → rc3), on the actual repo this time rather than a zip, fixed three additional points: deep (not just shallow) copying on `Fact.payload`/`Effect.payload`, clarifying that bit-for-bit determinism excludes `trace_id`, and a packaging issue on `CLAUDE.md`. Full bug-by-bug detail: [`journal-integration.md`](./docs/journal-integration.md) *(French)*.
 
-## Limitations connues (v0.1.0-preview) — assumées, pas des bugs
+## Known limitations (v0.1.0-preview) — assumed, not bugs
 
-- Les signaux dérivés (`EvaluationResult.derived_signals`) sont acceptés par l'API mais **non traités** — pas de cascade de règles dans cette version. Décision d'architecture (file séparée ? récursif ?) reportée à un tour dédié plutôt que corrigée en urgence. Prévu en v0.2.0.
-- `RuleTrace.duration_ms` est toujours `Decimal("0")` — pas de mesure réelle du temps d'exécution.
-- AND chaînés imbriqués plutôt qu'aplatis dans la trace — cosmétique, la logique et le court-circuit restent corrects.
-- Pas de politique de rétention sur `InMemoryContextStore`/`InMemoryFactStore` — stores mémoire pensés pour tests/démo/prototype, pas pour une production longue durée sans adaptateur dédié.
-- Pas encore de fenêtres temporelles, de transitions d'état (FSM), ni de `engine.replay()` — voir [`docs/roadmap-vision.md`](./docs/roadmap-vision.md).
-- `Fact.payload`/`Effect.payload`/`FrozenContext.values` sont protégés par deep copy à la construction (une mutation externe ne les affecte plus) et `MappingProxyType` en lecture seule au premier niveau — mais `MappingProxyType` ne protège que ce premier niveau : muter une valeur imbriquée *à travers* le proxy (`obj.payload["nested"]["x"] = ...`) reste possible. Pas un trou de sécurité (l'appelant externe ne peut plus rien depuis sa propre référence), mais pas un deep-freeze récursif non plus.
+- Derived signals (`EvaluationResult.derived_signals`) are accepted by the API but **not processed** — no rule cascading in this version. The architecture decision (separate queue? recursive?) is deferred to a dedicated round rather than rushed. Planned for v0.2.0.
+- `RuleTrace.duration_ms` is always `Decimal("0")` — no real execution-time measurement yet.
+- Nested AND chains aren't flattened in the trace — cosmetic, the logic and short-circuiting remain correct.
+- No retention policy on `InMemoryContextStore`/`InMemoryFactStore` — in-memory stores meant for tests/demos/prototypes, not long-running production without a dedicated adapter.
+- No time windows, state transitions (FSM), or `engine.replay()` yet — see [`roadmap-vision.md`](./docs/roadmap-vision.md) *(French)*.
+- `Fact.payload`/`Effect.payload`/`FrozenContext.values` are protected by deep copy at construction (an external mutation no longer affects them) and read-only `MappingProxyType` at the top level — but `MappingProxyType` only protects that top level: mutating a nested value *through* the proxy (`obj.payload["nested"]["x"] = ...`) is still possible. Not a security hole (an external caller can no longer do anything from their own reference), but not a recursive deep-freeze either.
 
-## Utiliser sinmonto avec l'aide d'une IA
+## Using sinmonto with the help of an AI
 
-[`UTILISATION.md`](./UTILISATION.md) — un contributeur qui *utilise* sinmonto (pas qui modifie son noyau) devrait commencer là, humain ou IA. Ça évite de deviner l'API — un problème réel : plusieurs IA sans accès au dépôt ont inventé des noms de classes plausibles mais fictifs en travaillant sur ce projet. Pour contribuer au noyau lui-même, voir [`CONTRIBUTING.md`](./CONTRIBUTING.md) et [`AGENTS.md`](./AGENTS.md) à la place.
+[`UTILISATION.md`](./UTILISATION.md) *(French)* — a contributor who *uses* sinmonto (rather than modifying its core) should start there, human or AI. It avoids guessing the API — a real problem: several AIs without repo access invented plausible but fictional class names while working on this project. To contribute to the core itself, see [`CONTRIBUTING.md`](./CONTRIBUTING.md) and [`AGENTS.md`](./AGENTS.md) instead.
 
-## Architecture et gouvernance
+## Architecture and governance
 
-Ce projet est construit avec une discipline de documentation stricte, en revue croisée avec plusieurs IA :
+This project is built with strict documentation discipline, in cross-review with several AIs. Currently French-only — these are process documents, not usage documentation:
 
-- [`constitution-finale.md`](./docs/constitution-finale.md) — principes architecturaux verrouillés, stables à travers toutes les versions.
-- [`constitution-noyau.md`](./docs/constitution-noyau.md) — spécification technique complète de ce que le noyau construit.
-- [`journal-integration.md`](./docs/journal-integration.md) — historique honnête : ce qui a été tenté, les bugs trouvés, comment ils ont été corrigés.
-- [`roadmap-vision.md`](./docs/roadmap-vision.md) — ce qui n'est pas encore construit, et pourquoi ce n'est pas encore le moment.
+- [`constitution-finale.md`](./docs/constitution-finale.md) — locked architectural principles, stable across every version.
+- [`constitution-noyau.md`](./docs/constitution-noyau.md) — full technical specification of what the core builds.
+- [`journal-integration.md`](./docs/journal-integration.md) — honest history: what was tried, the bugs found, how they were fixed.
+- [`roadmap-vision.md`](./docs/roadmap-vision.md) — what isn't built yet, and why now isn't the time.
 
-## Licence
+## License
 
-Apache License 2.0 — voir [`LICENSE`](./LICENSE).
+Apache License 2.0 — see [`LICENSE`](./LICENSE).

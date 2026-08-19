@@ -1,50 +1,51 @@
-# Contribuer à sinmonto
+# Contributing to sinmonto
 
-Merci de t'intéresser à `sinmonto` (*Sɛ́n mɔto*, fon pour « moteur de règle »).
+*[Version française](./docs/fr/CONTRIBUTING.md)*
 
-Ce projet a été développé en solo depuis un téléphone (Termux, Android — pas
-de PC), avec une gouvernance multi-IA inhabituelle : les décisions
-architecturales passent par des revues croisées documentées, pas par une
-seule opinion. Une contribution externe est bienvenue, dans ce cadre.
+Thanks for your interest in `sinmonto` (*Sɛ́n mɔto*, Fon for "rule engine").
 
-## Avant de commencer
+This project was developed solo from a phone (Termux, Android — no PC),
+with an unusual multi-AI governance model: architectural decisions go
+through documented cross-reviews, not a single opinion. External
+contributions are welcome, within that framework.
 
-1. Lis [`README.md`](README.md) — usage et limitations connues.
-2. Lis [`docs/constitution-finale.md`](docs/constitution-finale.md) §2 — les
-   **10 décisions architecturales verrouillées**. Elles ne se redébattent pas
-   dans une issue ou une PR. Si une impossibilité technique réelle apparaît
-   en implémentant (pas en théorie), signale-la explicitement — ne la
-   contourne pas en silence.
-3. Si tu touches au noyau : [`AGENTS.md`](AGENTS.md) pour les conventions de
-   code et la routine de vérification exacte.
+## Before you start
 
-## Les 10 décisions verrouillées
+1. Read [`README.md`](README.md) — usage and known limitations.
+2. Read [`docs/constitution-finale.md`](docs/constitution-finale.md) §2
+   *(French)* — the **10 locked architectural decisions**. They're not
+   up for debate in an issue or PR. If a genuine technical impossibility
+   comes up while implementing (not in theory), flag it explicitly —
+   don't quietly work around it.
+3. If you're touching the core: [`AGENTS.md`](AGENTS.md) *(French)* for
+   code conventions and the exact verification routine.
 
-1. Pas de réseau Rete complet — indexation alpha légère uniquement.
-2. `Context` mutable pendant un cycle d'évaluation, figé en `FrozenContext`
-   immuable à la fin (`commit()`).
-3. `Signal` (déclencheur) et `Fact` (information) sont deux types distincts.
-4. Effects-as-data : aucune règle n'exécute d'effet de bord — elle retourne
-   des `Effect` décrits, un exécuteur séparé les applique.
-5. Explicabilité native — chaque condition, vraie ou fausse, doit être
-   traçable.
-6. Pas de durabilité multi-jours dans le cœur (`ContextStore`/`FactStore`
-   abstraits, implémentations mémoire par défaut).
-7. Temps injecté (`Clock`), jamais `time.time()` dans le moteur.
-8. `engine.compile()` verrouille la configuration.
-9. `__slots__` sur les objets internes chauds — jamais sur le `payload`
-   utilisateur.
-10. Protocole `Evaluable` commun, classes distinctes qui l'implémentent.
+## The 10 locked decisions
 
-## Le filtre v1.0
+1. No full Rete network — light alpha indexing only.
+2. `Context` mutable during an evaluation cycle, frozen into an immutable
+   `FrozenContext` at the end (`commit()`).
+3. `Signal` (trigger) and `Fact` (information) are two distinct types.
+4. Effects-as-data: no rule executes a side effect — it returns described
+   `Effect`s, a separate executor applies them.
+5. Native explainability — every condition, true or false, must be
+   traceable.
+6. No multi-day durability in the core (`ContextStore`/`FactStore` are
+   abstract, in-memory implementations by default).
+7. Injected time (`Clock`), never `time.time()` in the engine.
+8. `engine.compile()` locks the configuration.
+9. `__slots__` on hot internal objects — never on the user `payload`.
+10. Common `Evaluable` protocol, distinct classes implementing it.
 
-Avant de proposer une fonctionnalité : *« est-ce que ça rapproche réellement
-la v1.0, ou est-ce qu'on rêve d'une fonctionnalité qui n'a peut-être jamais
-besoin d'exister maintenant ? »* Si c'est la seconde réponse, l'idée a sa
-place dans [`docs/roadmap-vision.md`](docs/roadmap-vision.md), pas dans le
-noyau tout de suite.
+## The v1.0 filter
 
-## Installer et lancer les tests
+Before proposing a feature: *"does this genuinely bring v1.0 closer, or
+are we dreaming up a feature that may never actually need to exist right
+now?"* If it's the second answer, the idea belongs in
+[`docs/roadmap-vision.md`](docs/roadmap-vision.md) *(French)*, not in the
+core just yet.
+
+## Installing and running the tests
 
 ```bash
 git clone https://github.com/RuleLabs/sinmonto.git
@@ -52,64 +53,64 @@ cd sinmonto
 pip install -e .
 ```
 
-Zéro dépendance de runtime ni de test — pas de `pytest`. Les tests vivent
-dans `tests/`, séparés du code source. Depuis la racine du dépôt :
+Zero runtime or test dependencies — no `pytest`. Tests live in `tests/`,
+separate from the source code. From the repo root:
 
 ```bash
 python3 tests/run_all.py
 python3 examples/end_to_end.py
 ```
 
-*(`./scripts/test_all.sh` fait tourner les deux en une commande.)*
+*(`./scripts/test_all.sh` runs both in one command.)*
 
-Pour déboguer un seul module : `python3 tests/run_all.py test_core`.
+To debug a single module: `python3 tests/run_all.py test_core`.
 
-Les fichiers de `tests/` importent `sinmonto` normalement (`pip install -e .`
-rend ça possible) ; `tests/run_all.py` ajoute aussi la racine du dépôt à
-`sys.path` en secours si l'install éditable a été oubliée. Un échec sort
-avec un code non nul (`os._exit(1)`), exploitable en CI.
+Files in `tests/` import `sinmonto` normally (`pip install -e .` makes
+that possible); `tests/run_all.py` also adds the repo root to `sys.path`
+as a fallback in case the editable install was skipped. A failure exits
+with a non-zero code (`os._exit(1)`), usable in CI.
 
-## Comment proposer un changement
+## How to propose a change
 
-**Typo, lien cassé, correction de doc** — PR directe, pas besoin d'issue.
+**Typo, broken link, doc fix** — direct PR, no issue needed.
 
-**Correction de bug** — Ouvre une issue courte (comportement attendu vs
-observé, comment reproduire, sortie du mini-runner si pertinent). Une PR
-peut suivre immédiatement si tu as déjà le correctif.
+**Bug fix** — Open a short issue (expected vs. observed behavior, how to
+reproduce, mini-runner output if relevant). A PR can follow immediately
+if you already have the fix.
 
-**Évolution architecturale** (nouvelle fonctionnalité, changement de
-comportement, nouvelle primitive) — Ouvre une issue d'abord. Ne commence pas
-le code avant que la direction soit validée. Ces décisions passent par le
-processus du **contrat vivant** ([`docs/contrat-vivant-gabarit.md`](docs/contrat-vivant-gabarit.md)) :
-mission écrite, revues croisées, rapport structuré, synthèse avant
-verrouillage. Tu peux y participer — proposer une mission, répondre à un
-rapport — mais la décision finale revient au mainteneur.
+**Architectural change** (new feature, behavior change, new primitive) —
+Open an issue first. Don't start coding before the direction is
+validated. These decisions go through the **living contract** process
+([`docs/contrat-vivant-gabarit.md`](docs/contrat-vivant-gabarit.md)
+*(French)*): a written mission, cross-reviews, a structured report,
+synthesis before locking in. You can take part — propose a mission,
+respond to a report — but the final call rests with the maintainer.
 
-### Ce qu'on attend dans une PR
-- Un changement net, un périmètre clair — pas de refonte cachée dans un
-  patch de trois lignes.
-- Les tests concernés lancés localement, et `examples/end_to_end.py`.
-- La doc mise à jour (`README.md`, `CHANGELOG.md`, ou `docs/`) si le
-  comportement visible change.
-- Aucun import direct depuis un module interne (`from sinmonto._core import
-  Fact`) — seule la surface `sinmonto.__all__` (37 noms) est garantie.
+### What we expect in a PR
+- A clean change, a clear scope — no hidden rewrite tucked into a
+  three-line patch.
+- Relevant tests run locally, plus `examples/end_to_end.py`.
+- Docs updated (`README.md`, `CHANGELOG.md`, or `docs/`) if visible
+  behavior changes.
+- No direct import from an internal module (`from sinmonto._core import
+  Fact`) — only the `sinmonto.__all__` surface (37 names) is guaranteed.
 
-## Le ton attendu
+## The expected tone
 
-[`docs/journal-integration.md`](docs/journal-integration.md) documente
-honnêtement les bugs, les fausses pistes et les erreurs de revue — la
-tienne y compris, le cas échéant. Ce n'est pas une gêne à cacher, c'est une
-valeur du projet. *« J'ai d'abord essayé X, ça ne marchait pas parce que Y,
-j'ai finalement opté pour Z »* est un format de description de PR
-parfaitement valide ici — préférable à un historique lissé.
+[`docs/journal-integration.md`](docs/journal-integration.md) *(French)*
+honestly documents bugs, false starts, and review mistakes — yours
+included, where relevant. That's not something to hide, it's a project
+value. *"I first tried X, it didn't work because Y, I ended up going
+with Z"* is a perfectly valid PR description here — preferable to a
+polished-over account.
 
-## Revue
+## Review
 
-Le dépôt est géré en solo, en preview 0.x. Le délai de réponse peut varier
-selon la disponibilité du mainteneur (depuis son téléphone). Pas d'exigence
-de SLA ; un ping poli après deux semaines sans nouvelles est bienvenu.
+The repo is maintained solo, in 0.x preview. Response time may vary
+depending on the maintainer's availability (from their phone). No SLA
+expectation; a polite ping after two weeks of silence is welcome.
 
-## Licence
+## License
 
-En contribuant, tu acceptes que ta contribution soit publiée sous la licence
-du projet : [Apache License 2.0](LICENSE).
+By contributing, you agree that your contribution is published under the
+project's license: [Apache License 2.0](LICENSE).

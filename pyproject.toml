@@ -9,7 +9,7 @@ name = "sinmonto"
 # fichier avait un commentaire contradictoire ("jamais formellement
 # verrouillé") laissé après la décision — corrigé, 2026-08.
 version = "0.1.0rc3"
-description = "Moteur de décision événementiel, explicable, en Python pur — zéro dépendance."
+description = "Explainable, deterministic event-driven decision engine, in pure Python — zero dependencies."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"

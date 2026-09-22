@@ -143,6 +143,12 @@ class RuleTrace:
     matched: bool
     condition_tree: ConditionTrace
     duration_ms: Decimal
+    hop: int = 0                           # 0 = signal racine, 1 = premier
+                                            # dérivé... (2026-09, cascade de
+                                            # signaux dérivés, défaut
+                                            # rétrocompatible)
+    trigger_signal_id: UUID | None = None  # signal du hop qui a déclenché
+                                            # cette évaluation (2026-09, idem)
 
 @dataclass(frozen=True, slots=True)
 class DecisionTrace:
@@ -277,6 +283,14 @@ class RuleEvaluationError(EngineRuntimeError):
 
 class ContextCorruptionError(EngineRuntimeError): ...
 class ClockError(EngineRuntimeError): ...
+class MaxDerivedDepthExceededError(EngineRuntimeError):
+    """Signal dérivé qui dépasserait max_derived_depth — fail_loud
+    uniquement (2026-09) ; sous continue/fail_fast, le signal est tracé
+    (rule_id="__max_derived_depth__") et abandonné, jamais levée. Comme
+    RuleEvaluationError, son comportement est gouverné par
+    rule_error_policy plutôt qu'un axe de policy séparé — dépasser une
+    limite de profondeur n'est pas plus grave qu'une règle qui plante,
+    qui elle non plus n'interrompt pas la cascade par défaut."""
 class BackendError(EngineError): ...   # adaptateurs de persistance, hors cœur
 ```
 
@@ -318,28 +332,55 @@ def assert_eq(actual, expected, msg=""):
 
 ## 10. Le cycle d'évaluation
 
+*(réécrite 2026-09 — l'ancienne version 1-10 ci-dessous avait une tension
+jamais résolue entre l'étape 9, "Decision assemblée et retournée", et
+l'étape 10, "file traitée après la fin du cycle courant" : une Decision
+déjà retournée ne peut pas ensuite intégrer les effets d'une file traitée
+après coup. Fermée par synthèse de revue croisée 5 IA — Kimi, ChatGPT/Luna,
+Grok, Gemini, Qwen : la file devient une boucle **interne** à `evaluate()`,
+et la Decision n'est assemblée qu'une fois la file épuisée. Consensus
+unanime des 5 sur ce point, déjà cohérent avec constitution-finale.md §7
+"jamais réinjectés dans le même cycle".)*
+
+Un appel à `evaluate(signal)` traite un ou plusieurs **hops** en file FIFO
+locale à cet appel (`signal` = hop 0, profondeur 0) :
+
 ```
-1. Signal entrant
-2. Fact stocké dans le FactStore (append-only, indexé par entity+temps)
-3. AlphaIndex.match(fact) -> ensemble des rule_id candidates
-4. Chargement du dernier FrozenContext de l'entité -> EvaluationContext mutable
-5. Évaluation des règles candidates, triées par priorité (tri stable Python =
+1. File FIFO = [(signal racine, profondeur 0, causality parente = ())]
+2. Tant que la file n'est pas vide, dépiler un hop (signal, profondeur,
+   causality parente) et exécuter les étapes 3 à 9 pour CE hop :
+3. Fact du hop stocké dans le FactStore (append-only, indexé par entity+temps)
+4. Chargement du dernier FrozenContext de l'entité DE CE HOP (qui peut
+   différer de celle du hop parent) -> EvaluationContext mutable
+5. AlphaIndex.match(fact) -> ensemble des rule_id candidates
+6. Évaluation des règles candidates, triées par priorité (tri stable Python =
    tie-break par ordre d'insertion), effets et deltas collectés
-6. Erreur dans une règle -> capturée selon rule_error_policy (continue par défaut :
-   isolée, tracée, context_delta jamais appliqué partiellement — y compris une
-   mutation faite directement via ctx.set() dans l'action, pas seulement le
-   context_delta retourné : snapshot de ctx pris avant chaque règle, restauré si
-   elle plante, 2026-08) ; jamais silencieuse. except Exception uniquement — pas
-   BaseException, SystemExit/KeyboardInterrupt remontent et interrompent
-   l'évaluation (constitution-finale.md Q3).
-7. Signaux dérivés (EvaluationResult.derived_signals) -> mis en FILE D'ATTENTE,
-   jamais réinjectés dans le même passage. max_derived_depth = 3 par défaut.
-8. ctx.commit() -> un seul FrozenContext, stocké. causality = (fact.fact_id,
-   *fact.causality) pour un fait, (signal.signal_id,) pour un timer (2026-08 —
-   avant : fact.causality seul, ou () pour un timer).
-9. Decision assemblée (effects + trace + context_version + has_errors) et retournée
-10. File d'attente traitée après la fin du cycle courant, jusqu'à épuisement ou
-    max_derived_depth atteint
+7. Erreur dans une règle -> capturée selon rule_error_policy (continue par défaut :
+   isolée, tracée, context_delta jamais appliqué partiellement — snapshot de
+   ctx pris avant chaque règle, restauré si elle plante) ; jamais silencieuse.
+   except Exception uniquement — SystemExit/KeyboardInterrupt remontent et
+   interrompent toute la cascade (constitution-finale.md Q3).
+8. Signal dérivé produit par une règle qui matche (EvaluationResult.derived_signals) :
+   si profondeur+1 > max_derived_depth (défaut 3), JAMAIS silencieux — tracé
+   (rule_id="__max_derived_depth__", has_errors=True) et abandonné sous
+   continue/fail_fast, ou MaxDerivedDepthExceededError sous fail_loud. Sinon,
+   enfilé avec sa causality (voir étape 9) — jamais réinjecté dans ce même
+   hop.
+9. Commit de CE hop : ctx.commit() -> un FrozenContext par hop, stocké.
+   causality de ce hop = (fact.fact_id, *fact.causality) pour un fait ou
+   (signal.signal_id,) pour un timer, PRÉFIXÉE à la causality du hop parent
+   (() pour le hop racine — généralise directement l'ancienne formule
+   racine). Transportée explicitement dans la file plutôt que relue via
+   ContextStore par entity_id : un signal dérivé peut viser une entity_id
+   différente de son parent, auquel cas ce rechargement irait chercher un
+   contexte sans rapport avec la cascade.
+10. Une fois la file épuisée : Decision assemblée (effects + trace de
+    TOUS les hops + context_version du hop racine + has_errors) et
+    retournée. signal_id/entity_id de la Decision restent ceux du signal
+    racine tout du long, même si la cascade a traversé d'autres entity_id
+    en chemin — pas de concept multi-entity dans le contrat public pour
+    cette preview. RuleTrace.hop/trigger_signal_id permettent de
+    distinguer deux évaluations du même rule_id à des hops différents.
 ```
 
 ## 11. Disposition des fichiers
@@ -383,14 +424,17 @@ class InMemoryContextStore(ContextStore):
 
 **0.1.0-preview (2026-08) — bugs silencieux bloquants corrigés en revue croisée multi-IA** (ChatGPT, Grok, DeepSeek, Kimi, Qwen, Meta AI) : copie profonde du contexte (commit + rechargement), snapshot/restore autour de chaque règle (atomicité réelle, y compris mutation directe de `ctx`), `Signal.entity_id` validé contre `fact.entity_id`, opérateur/kind de condition invalide rejeté à la construction, retour d'action non reconnu levé plutôt qu'ignoré, copie défensive de `Fact._payload`, `causality` chaînée, contrat `Symbole` remplacé par la surface `__all__` réelle. Détail par bug : voir `journal-integration.md`.
 
+**0.1.0rc4 (2026-09) — cascade de signaux dérivés câblée**, synthèse de revue croisée 5 IA (Kimi, ChatGPT/Luna, Grok, Gemini, Qwen) : file FIFO interne à `evaluate()`, `max_derived_depth` réellement appliqué (jamais de troncature silencieuse), `causality` chaînée par hop, `RuleTrace.hop`/`trigger_signal_id`. Fermait le point #1 ci-dessous, ouvert depuis rc1. Détail : `journal-integration.md`.
+
 **Reste ouvert, assumé pour la preview — pas prévu à l'avance, documenté honnêtement :**
 
 | # | Manque | Pourquoi c'est non bloquant pour une preview |
 |---|---|---|
-| 1 | File d'attente des signaux dérivés (`max_derived_depth`) — un signal dérivé produit aujourd'hui est perdu | Décision d'architecture (récursif ? tick() séparé ?) qui mérite son propre tour dédié, pas une correction en urgence |
-| 2 | `duration_ms` figé à `Decimal("0")` | Non bloquant, juste pas mesuré |
-| 3 | AND chaînés imbriqués plutôt qu'aplatis dans la trace | Cosmétique, lisibilité de l'explicabilité |
-| 4 | Pas de politique de rétention sur `InMemoryContextStore`/`InMemoryFactStore` | Stores mémoire, usage prévu = tests/démo/prototype, pas production long-terme |
+| 1 | `duration_ms` figé à `Decimal("0")` | Non bloquant, juste pas mesuré |
+| 2 | AND chaînés imbriqués plutôt qu'aplatis dans la trace | Cosmétique, lisibilité de l'explicabilité |
+| 3 | Pas de politique de rétention sur `InMemoryContextStore`/`InMemoryFactStore` | Stores mémoire, usage prévu = tests/démo/prototype, pas production long-terme |
+| 4 | `Decision.has_derived_signals` (ou compteur) absent — savoir qu'une cascade a eu lieu exige de parcourir `trace.rule_traces` et regarder si `hop > 0` quelque part | Question ouverte soulevée par Kimi (tour cascade) ; contournable sans nouveau champ, pas bloquant |
+| 5 | Cascade multi-entité non testée en profondeur au-delà d'un hop (un signal dérivé visant une entity_id différente du hop racine) | Comportement défini et couvert par un test (causality correcte), mais pas encore un scénario de production réel |
 
 **Phase suivante (confirmée, inchangée)** :
 

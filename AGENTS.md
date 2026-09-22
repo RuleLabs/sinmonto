@@ -40,13 +40,15 @@ python3 tests/run_all.py test_core    # un seul module, pour déboguer
 
 Les imports internes sont relatifs (`from ._core import Fact`) — un module ne peut donc pas s'exécuter avec `python3 sinmonto/_core.py` en direct. `pip install -e .` (voir `docs/fr/CONTRIBUTING.md`) rend `sinmonto` importable depuis `tests/` ; `run_all.py` ajoute aussi la racine du dépôt à `sys.path` en secours.
 
-## État actuel (v0.1.0rc3 — preview technique)
+## État actuel (v0.1.0rc4 — preview technique)
 
-Fait et testé de bout en bout (42 tests, `tests/` + intégration) : objets fondamentaux, contexte à deux phases avec persistance (`ContextStore`), trace d'explication en arbre, DSL avec opérateurs, moteur avec indexation alpha, tie-breaking déterministe, gestion d'erreur (`continue`/`fail_fast`/`fail_loud`).
+Fait et testé de bout en bout (50 tests, `tests/` + intégration) : objets fondamentaux, contexte à deux phases avec persistance (`ContextStore`), trace d'explication en arbre, DSL avec opérateurs, moteur avec indexation alpha, tie-breaking déterministe, gestion d'erreur (`continue`/`fail_fast`/`fail_loud`), cascade de signaux dérivés (file FIFO, `max_derived_depth`, causality chaînée par hop).
 
 Corrigé en revue croisée multi-IA (2026-08) — voir `docs/journal-integration.md` : atomicité réelle des règles (snapshot/restore de `ctx`, y compris mutation directe), copie profonde du contexte (y compris `Fact`/`Effect.payload`), validation `Signal.entity_id`/opérateurs de condition/kind composite/retours d'action, `causality` chaînée, code de sortie non nul du runner de tests sur échec.
 
-Pas encore fait, ne pas assumer que c'est câblé : file d'attente des signaux dérivés (`max_derived_depth`), mesure réelle de `duration_ms`, aplatissement des AND chaînés dans la trace. Voir `docs/roadmap-vision.md` et `docs/journal-integration.md` pour le détail et l'historique complet des décisions.
+Cascade de signaux dérivés câblée (2026-09), synthèse de revue croisée 5 IA (Kimi, ChatGPT/Luna, Grok, Gemini, Qwen) — voir `docs/journal-integration.md`.
+
+Pas encore fait, ne pas assumer que c'est câblé : mesure réelle de `duration_ms`, aplatissement des AND chaînés dans la trace, politique de rétention sur les stores mémoire. Voir `docs/roadmap-vision.md` et `docs/journal-integration.md` pour le détail et l'historique complet des décisions.
 
 ## Processus
 

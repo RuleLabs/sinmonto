@@ -34,3 +34,16 @@ def test_decision_trace_records_evaluation_order() -> None:
     )
     assert dt.evaluation_order == ("high_risk",)
     assert dt.rule_traces[0].matched is True
+
+
+def test_rule_trace_hop_and_trigger_signal_id_default_to_root() -> None:
+    """hop/trigger_signal_id (ajoutés pour la cascade de signaux dérivés)
+    doivent avoir des défauts rétrocompatibles : un RuleTrace construit
+    avec seulement les 4 champs d'origine reste valide, comme avant."""
+    rt = RuleTrace(
+        rule_id="r1", matched=True,
+        condition_tree=ConditionTrace("none", "(pas de condition)", True),
+        duration_ms=Decimal("0"),
+    )
+    assert rt.hop == 0
+    assert rt.trigger_signal_id is None

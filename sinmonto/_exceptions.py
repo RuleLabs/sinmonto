@@ -67,6 +67,28 @@ class ContextCorruptionError(EngineRuntimeError):
     """Un commit() a produit un état incohérent."""
 
 
+class MaxDerivedDepthExceededError(EngineRuntimeError):
+    """Un signal dérivé dépasserait max_derived_depth (rule_error_policy="fail_loud" uniquement).
+
+    Sous rule_error_policy="continue"/"fail_fast", ce dépassement n'est
+    jamais levé : le signal dérivé en cause est abandonné, tracé
+    explicitement (rule_id="__max_derived_depth__") et Decision.has_errors
+    passe à True — cohérent avec la façon dont une règle qui plante est
+    déjà traitée (comportement gouverné par rule_error_policy). Seul
+    "fail_loud" fait remonter cette exception à l'appelant, comme pour
+    RuleEvaluationError.
+    """
+
+    def __init__(self, signal_id: UUID, depth: int, max_depth: int) -> None:
+        self.signal_id = signal_id
+        self.depth = depth
+        self.max_depth = max_depth
+        super().__init__(
+            f"Signal dérivé {signal_id} au hop {depth} dépasse "
+            f"max_derived_depth={max_depth}"
+        )
+
+
 class ClockError(EngineRuntimeError):
     """Temps injecté invalide ou non monotone."""
 

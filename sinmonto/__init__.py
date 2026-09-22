@@ -1,6 +1,6 @@
 """sinmonto — moteur de décision événementiel, explicable, en Python pur.
 
-Surface publique garantie : les 37 noms listés dans `__all__` ci-dessous,
+Surface publique garantie : les 38 noms listés dans `__all__` ci-dessous,
 importables via `from sinmonto import <nom>`. Tout le reste (fichiers
 préfixés _) est interne et peut changer sans préavis entre versions
 mineures — voir constitution-finale.md §8.
@@ -25,6 +25,7 @@ from ._exceptions import (
     EngineRuntimeError,
     InvalidConditionError,
     InvalidEffectError,
+    MaxDerivedDepthExceededError,
     RuleEvaluationError,
 )
 from ._core import (
@@ -63,6 +64,7 @@ __all__ = [
     "RuleEvaluationError",
     "ContextCorruptionError",
     "ClockError",
+    "MaxDerivedDepthExceededError",
     "BackendError",
     # Core
     "Clock",

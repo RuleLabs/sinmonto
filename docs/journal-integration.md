@@ -466,3 +466,103 @@ par Grok) mis de côté pour un tour dédié, pas traité ici.
 
 **Fichiers concernés** : `_core.py`, `_trace.py`, `constitution-finale.md`,
 `_version.py`, `pyproject.toml`, `CLAUDE.md` (packaging, pas contenu)
+
+## 22 septembre 2026 — Cascade de signaux dérivés : synthèse de revue croisée 5 IA (Kimi, ChatGPT/Luna, Grok, Gemini, Qwen)
+
+**Contexte** : fermer le point #1 ouvert depuis rc1 (constitution-noyau.md
+§12) — `EvaluationResult.derived_signals` accepté par l'API mais jamais
+traité, cascade jamais câblée. Mission envoyée à 5 IA sur 6 points (a-f :
+mécanisme, comportement à `max_derived_depth`, granularité de `Decision`,
+`causality`, visibilité du contexte entre hops, code), rapports reçus en
+retour, synthèse et implémentation faites ici contre le code réel du zip
+livré — pas en théorie.
+
+**Résultat** : succès. Les 5 rapports convergent sur les points
+fondamentaux : (a) file FIFO interne (déjà verrouillé par
+constitution-finale.md §7) et (c) une seule `Decision` par cascade, aucun
+désaccord. Deux écarts au contrat déjà verrouillé détectés et corrigés
+avant implémentation, un vrai désaccord d'architecture tranché, un point
+de correction transverse (causality inter-entité) qu'aucun des 5 n'avait
+couvert correctement. 50 tests passent (42 existants + 8 nouveaux), dont
+6 dédiés à la cascade.
+
+**Problèmes rencontrés**
+
+1. **Gemini et Qwen proposent un contexte mutable partagé sur toute la
+   cascade, un seul `commit()` à la toute fin, au lieu d'un commit par
+   hop.** → Trouvé en confrontant leur point (e) au texte déjà verrouillé
+   de constitution-finale.md §7 ("pas de réinjection immédiate dans le
+   même cycle") et de l'ancien constitution-noyau.md §10 ("jamais
+   réinjectés dans le même passage") — les deux disent explicitement
+   qu'un signal dérivé démarre un nouveau cycle, donc un nouveau
+   `commit()`, pas qu'il prolonge celui du parent. Kimi, Luna et Grok
+   convergent correctement sur "un commit par hop, rechargement par le
+   hop suivant" ; Gemini et Qwen rouvraient une décision déjà tranchée
+   sans le signaler comme tel — la "règle d'or" de
+   `contrat-vivant-gabarit.md` demande de signaler une impossibilité
+   technique, pas de redébattre en silence. → Tranché pour le commit par
+   hop, conforme au texte déjà verrouillé. Bénéfice pratique confirmé par
+   `test_cascade_context_visible_between_hops` : un score posé au hop 0
+   doit être visible au hop 1 sans attendre la fin de toute la cascade.
+
+2. **Gemini confond `fail_fast` et `fail_loud`** (son code fait
+   `if policy == "fail_fast" or policy == "fail_loud": raise exc`), **et
+   Qwen vide toute la file (`queue.clear()`) sur `fail_fast`.** → Trouvé
+   en rejouant le code de chaque rapport contre constitution-finale.md
+   Q5, qui distingue explicitement les deux : `fail_fast` "arrête les
+   règles restantes de CE cycle, conserve les effets déjà produits"
+   (jamais de levée, scope = un seul hop) contre `fail_loud` "l'exception
+   remonte à l'appelant". Le code existant (avant ce tour) implémentait
+   déjà `fail_fast` correctement — Gemini et Qwen s'en écartent chacun
+   dans une direction différente, sans le signaler dans leur section
+   "écart au contrat". → `fail_fast` reste scopé au hop courant (`break`
+   dans la boucle de règles, la file continue) ; `test_fail_fast_stops_remaining_rules`
+   (inchangé) reste vert.
+
+3. **Dépassement de `max_derived_depth` : 3 positions différentes.** Kimi
+   le fait dépendre de `rule_error_policy` (`has_errors` en
+   continue/fail_fast, exception en fail_loud) ; Luna et Gemini lèvent
+   systématiquement une exception dédiée, indépendamment de la policy ;
+   Grok et Qwen ne lèvent jamais, seulement `has_errors` + trace. Pas une
+   erreur à corriger — un vrai désaccord d'architecture entre les 5,
+   chacun cohérent avec sa propre logique. → Tranché en faveur de Kimi :
+   comportement gouverné par `rule_error_policy`, cohérent avec le
+   docstring déjà existant d'`EngineRuntimeError` ("comportement gouverné
+   par rule_error_policy") et avec le fait qu'une règle qui *plante*
+   n'interrompt déjà pas la cascade par défaut — il serait incohérent
+   qu'une limite *configurée* soit par défaut plus stricte qu'un vrai bug
+   non géré, alors que perdre un effet déjà produit par un hop précédent
+   (ex. blocage d'une transaction) est le pire résultat possible pour un
+   moteur de fraude si toute la `Decision` disparaît dans une exception.
+   Repris de Luna/Gemini : une exception dédiée et testable
+   (`MaxDerivedDepthExceededError`) plutôt qu'un simple `has_errors` —
+   levée uniquement sous `fail_loud`.
+
+4. **Aucun des 5 rapports ne propage correctement la `causality` quand un
+   signal dérivé vise une `entity_id` différente de celle de son hop
+   parent.** → Pas trouvé dans les rapports eux-mêmes (aucun des 5 ne
+   teste ce cas) mais en vérifiant que `Signal.entity_id`
+   (constitution-noyau.md §1) est explicitement indépendant de celui du
+   parent — donc un cas réel, pas hypothétique (ex. une règle sur une
+   transaction dérive un signal sur le compte destinataire). Kimi, Grok
+   et Qwen reconstruisent la `causality` du hop dérivé en relisant
+   `ContextStore.get_latest(entity_id)` — correct seulement si le signal
+   dérivé reste sur la même entité que son parent ; sinon la relecture
+   retombe sur un état sans rapport (ou `None`), et l'origine de la
+   cascade est perdue. → Corrigé : la `causality` du hop parent est
+   transportée explicitement dans la file (jamais relue par
+   `entity_id`), donc correcte quelle que soit l'entité visée par chaque
+   hop. Couvert par `test_cascade_causality_correct_across_different_entities`,
+   qui échouerait avec l'approche des trois rapports concernés.
+
+**Ce qui reste ouvert** : `duration_ms`, AND non aplatis, pas de politique
+de rétention — inchangé. Nouveau, noté par Kimi et repris en roadmap :
+`Decision.has_derived_signals` (ou compteur) pour détecter une cascade
+sans parcourir `trace.rule_traces` — pas ajouté cette fois (contournable
+via `hop` sur chaque `RuleTrace`), à rouvrir si le besoin devient concret.
+
+**Fichiers concernés** : `_engine.py`, `_trace.py`, `_exceptions.py`,
+`__init__.py`, `_version.py`, `constitution-noyau.md` (§3, §7, §10, §12),
+`constitution-finale.md` (§8, compte d'exports uniquement), `CLAUDE.md`,
+`CHANGELOG.md`, `tests/test_engine.py`, `tests/test_trace.py`,
+`tests/test_exceptions.py`

@@ -31,6 +31,11 @@ class RuleTrace:
     matched: bool
     condition_tree: ConditionTrace
     duration_ms: Decimal
+    # Ajoutés pour la cascade de signaux dérivés (2026-09) — défauts
+    # rétrocompatibles, tout code qui construit un RuleTrace avec les 4
+    # champs d'origine continue de fonctionner tel quel.
+    hop: int = 0  # 0 = signal racine, 1 = premier dérivé, etc.
+    trigger_signal_id: UUID | None = None  # signal du hop qui a déclenché cette évaluation
 
 
 @dataclass(frozen=True, slots=True)

@@ -11,10 +11,33 @@ Ce fichier-ci reste volontairement lisible en quelques minutes.
 
 ## [Unreleased]
 
+## [0.1.0rc4] - 2026-09-22
+
+### Added
+- Cascade de signaux dérivés : `EvaluationResult.derived_signals` est
+  désormais traité par une file FIFO interne à `evaluate()` (jamais
+  réinjecté dans le même cycle), avec `max_derived_depth` réellement
+  appliqué (défaut : 3). Une seule `Decision` agrège les effets et la
+  trace de toute la cascade.
+- `MaxDerivedDepthExceededError` (`EngineRuntimeError`) : levée quand
+  `rule_error_policy="fail_loud"` et qu'un signal dérivé dépasserait
+  `max_derived_depth` ; sous `continue`/`fail_fast`, le signal est
+  abandonné mais tracé explicitement (`rule_id="__max_derived_depth__"`)
+  et `Decision.has_errors` passe à `True` — jamais de troncature
+  silencieuse.
+- `RuleTrace.hop` et `RuleTrace.trigger_signal_id` (défauts
+  rétrocompatibles) pour distinguer deux évaluations du même `rule_id` à
+  des hops différents de la cascade.
+- 8 nouveaux tests couvrant la cascade (agrégation en une Decision,
+  visibilité du contexte entre hops, chaînage de la causality — y compris
+  à travers deux `entity_id` différents —, comportement aux deux bornes
+  de `max_derived_depth`).
+
 ### Changed
 - Racine du dépôt allégée : les documents de gouvernance (constitutions, journal
   d'intégration, roadmap, contrat vivant) déplacés vers `docs/`. Aucun changement
   fonctionnel du noyau.
+- Surface publique : 38 noms dans `sinmonto.__all__` (37 + `MaxDerivedDepthExceededError`).
 
 ## [0.1.0rc3] - 2026-08-07
 

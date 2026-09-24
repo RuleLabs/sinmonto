@@ -1,6 +1,23 @@
 """Source unique de vérité pour la version du package."""
 
-__version__ = "0.1.0rc4"
+__version__ = "0.1.0rc6"
+# rc5 -> rc6, 2026-09 : marqueur py.typed (PEP 561) ajouté — le classifier
+# pyproject.toml "Typing :: Typed" promettait des types fiables aux
+# outils (mypy, pyright) sans le fichier marqueur qui rend cette promesse
+# vraie pour un package installé. Build réel vérifié de bout en bout :
+# `python -m build` + `twine check` passent sur sdist et wheel, le wheel
+# ne contient que sinmonto/*.py + py.typed (rien de superflu). Toujours
+# pas publié sur PyPI (workflow prêt, déclenchement manuel jamais fait).
+# rc4 -> rc5, 2026-09 : 3 bugs réels corrigés, trouvés en audit adversarial
+# (Grok, benchmark rc4) — AlphaIndex écartait silencieusement un NOT sur
+# champ absent (violation du contrat "sur-ensemble, jamais sous-ensemble"),
+# InMemoryFactStore.query() pouvait lever KeyError sur fact_id dupliqué
+# (redélivrance amont), _EngineJSONEncoder plantait sur des bytes non-UTF-8.
+# Plus 2 corrections de packaging : pyproject.toml resynchronisé (restait à
+# rc3, indépendant de _version.py — passé en versioning dynamique hatchling
+# pour empêcher toute récidive), et queue.pop(0) -> deque.popleft() dans la
+# cascade (O(n) -> O(1), supprime un terme quadratique mesuré sur les
+# cascades larges). Voir docs/journal-integration.md pour le détail complet.
 # rc3 -> rc4, 2026-09 : cascade de signaux dérivés câblée (file FIFO dans
 # evaluate(), max_derived_depth appliqué, causality chaînée par hop,
 # RuleTrace.hop/trigger_signal_id) — synthèse de revue croisée 5 IA (Kimi,

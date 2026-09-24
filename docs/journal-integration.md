@@ -566,3 +566,194 @@ via `hop` sur chaque `RuleTrace`), à rouvrir si le besoin devient concret.
 `constitution-finale.md` (§8, compte d'exports uniquement), `CLAUDE.md`,
 `CHANGELOG.md`, `tests/test_engine.py`, `tests/test_trace.py`,
 `tests/test_exceptions.py`
+
+## 22 septembre 2026 (suite) — Audit adversarial + benchmark rc4 (Grok)
+
+**Contexte** : campagne de tests et de benchmark sur le rc4 tel que publié
+(zip fourni), avant diffusion aux vrais utilisateurs. Un workspace complet
+(`grok-workspace-1.zip`) a été fourni en retour, avec un fichier de données
+structuré (`src/data/report.json`) listant 6 findings avec sévérité,
+référence de contrat, reproduction et correctif suggéré — pas de simples
+remarques en prose. Chaque finding a été rejoué contre le code réel avant
+d'être traité comme un bug confirmé, même précaution que pour les rapports
+d'architecture.
+
+**Résultat** : 3 bugs réels dans le moteur + 1 en packaging, confirmés par
+reproduction directe et corrigés ; 1 finding non pertinent (nommage,
+expliqué ci-dessous) ; 1 (README) qui n'était pas un bug du zip livré mais
+un instantané plus ancien. Un point de performance (déjà identifié comme
+suspect par plusieurs revues indépendantes) corrigé au passage. 53 tests
+passent (50 existants + 3 nouveaux), `pip install -e .` et `pip show`
+rapportent maintenant la même version que `sinmonto.__version__`.
+
+**Problèmes rencontrés**
+
+1. **`AlphaIndex` écarte silencieusement une règle `NOT` sur un champ
+   absent.** `~(Field("vip") == True)` doit matcher quand `"vip"` n'existe
+   pas dans le fait (la condition, évaluée directement, vaut bien `True`
+   dans ce cas) — mais `index_rule()` traite un `NOT` comme n'importe quel
+   champ référencé : la règle devient candidate uniquement quand `"vip"`
+   est *présent*, donc jamais évaluée dans le seul cas où elle doit
+   matcher. `evaluation_order` reste vide, aucune erreur, aucune trace.
+   Violation directe du contrat d'`AlphaIndex` (constitution-noyau.md §4 :
+   "un sur-ensemble de candidates, jamais un sous-ensemble") — silencieuse,
+   donc exactement la classe de bug que ce projet existe pour éliminer.
+   Reproduit avec le scénario exact du finding avant correctif → confirmé.
+   → Corrigé : tout arbre de condition contenant un `NOT`, à n'importe
+   quelle profondeur, va dans `_unindexed` plutôt que d'être indexé par
+   champ. Pas d'analyse fine (ex. un `NOT` "protégé" par un `AND` avec un
+   champ positif ailleurs dans l'arbre, qui resterait sûr à indexer) —
+   gardé simple et sûr pour v1.0, différé à v1.1+ comme le palier suivant
+   d'`AlphaIndex` le documente déjà. Le paragraphe de constitution-noyau.md
+   §4 qui affirmait qu'un filtre par champ restait correct "peu importe
+   AND/OR/NOT" était directement faux — corrigé avec l'explication de
+   pourquoi, pas juste le résultat.
+
+2. **`InMemoryFactStore.query()` pouvait lever `KeyError`.** Un même
+   `fact_id` ajouté deux fois (redélivrance amont "at-least-once", jamais
+   empêchée par le contrat actuel) crée deux entrées dans `_order` pour une
+   seule dans `_facts`. Quand la première position atteint le front du ring
+   buffer et déclenche une éviction, `del self._facts[oldest]` supprime
+   l'unique entrée du dict ; la seconde position dans `_order` pointe
+   ensuite vers un `fact_id` absent de `_facts`, et `query()` — qui résout
+   `self._facts[fid]` avant même de filtrer par `entity_id` — lève
+   `KeyError`, potentiellement pour une entité différente de celle du
+   doublon. Reproduit avec `max_facts=3` et un doublon avant saturation →
+   confirmé. → Corrigé : `append()` détecte un `fact_id` déjà connu et met
+   à jour `_facts` sans dupliquer l'entrée dans `_order`.
+
+3. **`_EngineJSONEncoder` plantait sur des `bytes` non-UTF-8.**
+   `obj.decode("utf-8")` lève `UnicodeDecodeError` sur toute séquence
+   d'octets qui n'est pas du texte UTF-8 valide (un blob chiffré, des
+   données binaires arbitraires) — alors que la docstring de la classe
+   promet de gérer `bytes`. Reproduit avec `b"\xff\xfe\x00\x01"` → confirmé.
+   → Corrigé : encodage en base64 (`base64.b64encode(...).decode("ascii")`),
+   qui accepte n'importe quelle séquence d'octets sans jamais lever.
+
+4. **`pyproject.toml` désynchronisé de `_version.py`.** `pyproject.toml`
+   disait encore `version = "0.1.0rc3"` alors que `sinmonto/_version.py`
+   disait déjà `"0.1.0rc4"` depuis le tour précédent — deux sources de
+   vérité contradictoires, jamais vérifiées croisées lors du bump de
+   version. Conséquence concrète : `pip show sinmonto` aurait menti sur la
+   version réellement installée. Confirmé directement (`grep` des deux
+   fichiers) avant tout correctif ailleurs. → Corrigé structurellement,
+   pas juste resynchronisé une fois : `pyproject.toml` passe en versioning
+   dynamique (`dynamic = ["version"]` + `[tool.hatch.version] path =
+   "sinmonto/_version.py"`), donc une seule source de vérité désormais —
+   vérifié avec `hatchling version`, `pip install -e .` et `pip show`, les
+   trois rapportent `0.1.0rc4` (puis `rc5` après le reste de ce tour) sans
+   qu'il y ait de second endroit à modifier au prochain bump.
+
+**Vérifié et écarté (pas des bugs)**
+
+- Le finding sur le `rule_id` du tracé de profondeur ("le code dit
+  `__max_derived_depth__`, pas `max_derived_depth` comme dans la
+  synthèse") ne correspond à aucune incohérence réelle : `grep` sur tout
+  le dépôt confirme que `"max_derived_depth"` (sans underscores) n'apparaît
+  jamais comme `rule_id` — c'est le nom de la clé de config
+  (`self._config["max_derived_depth"]`), une chaîne différente utilisée
+  pour un usage différent, et la synthèse envoyée aux 5 IA utilisait déjà
+  correctement `"__max_derived_depth__"`. Probable confusion entre les
+  deux chaînes plutôt qu'un écart réel du code.
+- Le finding "README resté à rc3 / 42 tests" ne s'applique pas au zip
+  final livré : les métadonnées du benchmark associé (`git_head` identique
+  à la base de départ, `git_status` sans `README.md` ni `docs/fr/README.md`
+  parmi les fichiers modifiés) montrent que cette campagne travaillait sur
+  le **premier** zip livré ce jour-là, avant le correctif README fait plus
+  tard dans le même tour — pas une régression du zip final.
+
+**Point de performance corrigé au passage** : `queue.pop(0)` (`list`, O(n)
+par pop, donc O(n²) cumulé sur une cascade large) remplacé par
+`collections.deque.popleft()` (O(1)) dans la boucle FIFO de la cascade.
+Plusieurs revues indépendantes (benchmark rc4, analyse statique dans une
+autre) avaient signalé ce point ; corrigé directement plutôt que
+seulement noté, coût de risque nul (même sémantique FIFO) pour un vrai
+terme quadratique en moins.
+
+**Chiffres retenus du benchmark** (mesurés sur le rc4 corrigé, pas la
+version pré-correctifs — voir `docs/benchmark-rc4.md` pour le détail
+complet et l'environnement exact) : l'index alpha fait bien son travail
+(évaluation dominée par le nombre de *candidats*, pas le nombre total de
+règles) ; la cascade est linéaire par hop, le branchement explose
+combinatoirement par construction du graphe (pas un défaut du moteur) ;
+le vrai coût dominant est le `deepcopy` de snapshot/reload pour
+l'atomicité (compromis déjà assumé, `constitution-finale.md` Q5), pas
+l'indexation ni la cascade elle-même ; le `FactStore` mémoire scanne
+linéairement (déjà documenté comme non prévu pour la production).
+
+**Ce qui reste ouvert** : rien de nouveau au-delà de la liste déjà connue
+(`duration_ms`, AND non aplatis, rétention des stores mémoire). Le
+harness de benchmark (`scripts/benchmark.py`, adapté du script fourni
+pour des chemins portables) est reproductible par quiconque clone le
+dépôt.
+
+**Fichiers concernés** : `sinmonto/_engine.py` (AlphaIndex, `deque`),
+`sinmonto/_context.py` (`InMemoryFactStore.append`), `sinmonto/_core.py`
+(`_EngineJSONEncoder`), `pyproject.toml` (versioning dynamique),
+`sinmonto/_version.py` (rc5), `UTILISATION.md`, `README.md`,
+`docs/fr/README.md`, `CLAUDE.md`, `CHANGELOG.md`,
+`docs/constitution-noyau.md` (§4, §7, `InMemoryFactStore`),
+`tests/test_regressions.py` (+3 tests), `docs/benchmark-rc4.md` (nouveau),
+`scripts/benchmark.py` (nouveau)
+
+## 23 septembre 2026 — Audit "qu'est-ce qui manque pour 0.1.0" (sans IA externe — vérification directe)
+
+**Contexte** : Clarel a demandé ce qui manque pour sortir `0.1.0` (sans
+`rc`) — question distincte de la v1.0. Pas de rapport externe cette fois ;
+vérification directe contre le repo, `constitution-noyau.md` §12 et une
+tentative réelle de build/publish.
+
+**Résultat** : rien ne bloque plus côté code (le §12 "reste ouvert" est
+explicitement hors scope, pas une dette) ; un vrai gap de packaging trouvé
+et corrigé ; le seul jalon restant est externe (PyPI).
+
+**Problèmes rencontrés**
+
+1. **`py.typed` (PEP 561) absent alors que `pyproject.toml` déclare déjà
+   le classifier `"Typing :: Typed"`.** Ce classifier est une promesse aux
+   outils de typage (mypy, pyright) que les annotations inline sont
+   fiables une fois le package installé — promesse non tenue sans le
+   fichier marqueur. `find . -iname "py.typed"` ne retournait rien. →
+   Ajouté (`sinmonto/py.typed`, fichier vide). Vérifié en construisant le
+   package pour de vrai (`python -m build`, jamais fait jusqu'ici dans ce
+   projet) : `twine check` passe sur sdist et wheel, et le wheel ne
+   contient que `sinmonto/*.py` + `py.typed` — rien de superflu.
+2. **Jamais publié sur PyPI.** Recherché sur pypi.org : rien sous
+   `sinmonto`. Le workflow `.github/workflows/publish.yml` existe et est
+   correct (build + `twine check` + upload) mais en déclenchement manuel
+   uniquement (`workflow_dispatch`), jamais lancé. C'est le vrai jalon
+   restant, pas du code : le README pose depuis le début "un premier
+   retour d'usage externe réel" comme condition avant de figer la 0.x, et
+   ce retour suppose que quelqu'un puisse effectivement `pip install`
+   le paquet. Nécessite un compte PyPI + un token API en secret GitHub
+   (`PYPI_API_TOKEN`) — hors de portée d'une IA, à faire par Clarel.
+3. **Deux notes de doc devenues fausses par l'avancement du projet**,
+   pas de vrais bugs : `constitution-noyau.md` §12 listait encore le
+   benchmark de charge et le packaging comme "pas encore faits" alors
+   que les deux venaient d'être faits dans les tours précédents/ce
+   tour-ci ; §13 "Statut" disait encore "prêt pour le premier tour
+   d'implémentation réel", écrit avant qu'aucune implémentation n'existe.
+   Les deux mis à jour pour refléter l'état réel (rc6, 53 tests,
+   build/publish vérifiés).
+
+**Ce qui reste ouvert** : inchangé côté code (`duration_ms`, AND non
+aplatis, rétention). Le seul point d'action est la publication PyPI
+elle-même, entièrement du ressort de Clarel.
+
+**Fichiers concernés** : `sinmonto/py.typed` (nouveau), `sinmonto/_version.py`
+(rc6), `CHANGELOG.md`, `README.md`, `docs/fr/README.md`, `UTILISATION.md`,
+`CLAUDE.md`, `docs/constitution-noyau.md` (§12, §13)
+
+**Note négative à part** : en corrigeant les références de version dans
+`CLAUDE.md`, j'ai utilisé `sed -i` directement sur le chemin `CLAUDE.md`
+(symlink vers `AGENTS.md`) au lieu d'éditer `AGENTS.md` ou d'utiliser un
+outil d'édition symlink-safe. `sed -i` réécrit via un fichier temporaire
+puis un rename sur le chemin donné — ça remplace le lien lui-même par un
+fichier indépendant, silencieusement (aucune erreur, le contenu de
+`CLAUDE.md` restait même correct localement). Trouvé en re-vérifiant
+depuis une extraction fraîche du zip (`ls -la CLAUDE.md` — `-rw-`, plus
+`lrwxrwxrwx`), pas avant. Corrigé (contenu recopié dans `AGENTS.md`, lien
+recréé) et verrouillé dans `AGENTS.md` lui-même pour la prochaine fois :
+c'est la deuxième fois que ce symlink casse par un outil qui remplace
+plutôt qu'édite (la première, `zip -qr` sans `-y`, 2026-08) — le motif
+mérite une note permanente plutôt qu'une correction ponctuelle de plus.

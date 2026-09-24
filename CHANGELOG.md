@@ -11,6 +11,57 @@ Ce fichier-ci reste volontairement lisible en quelques minutes.
 
 ## [Unreleased]
 
+## [0.1.0rc6] - 2026-09-23
+
+### Fixed
+- Marqueur `py.typed` (PEP 561) manquant alors que `pyproject.toml`
+  déclare déjà le classifier `"Typing :: Typed"` — les outils de typage
+  (mypy, pyright) ne faisaient pas confiance aux annotations d'un
+  `sinmonto` installé sans ce fichier. Ajouté ; build réel vérifié
+  (`python -m build` + `twine check`) sur sdist et wheel.
+- Deux notes de doc obsolètes nettoyées (`constitution-noyau.md` §12/§13) :
+  le benchmark de charge et le packaging listés comme "pas encore faits"
+  l'étaient déjà.
+
+### Note
+Rien ne bloque encore un `0.1.0` stable côté code : les points de
+`constitution-noyau.md` §12 "reste ouvert" sont explicitement hors
+scope pour cette preview, pas des manques. Le vrai jalon restant est
+externe : publier sur PyPI (workflow prêt, jamais déclenché) pour
+obtenir le premier retour d'usage réel que le README pose comme condition
+avant de considérer la 0.x figée.
+
+## [0.1.0rc5] - 2026-09-22
+
+### Fixed
+- `AlphaIndex` écartait silencieusement une règle `NOT` (ex. `~(Field("vip") == True)`)
+  quand le champ concerné est **absent** du fait — précisément le cas où la
+  condition doit matcher. Violait le contrat "un sur-ensemble de candidates,
+  jamais un sous-ensemble". Toute règle dont l'arbre de condition contient un
+  `NOT` va désormais dans `_unindexed` (toujours candidate).
+- `InMemoryFactStore.query()` pouvait lever `KeyError` si un `fact_id` était
+  ajouté deux fois (redélivrance amont "at-least-once") et que la première
+  occurrence était évincée du ring buffer.
+- `_EngineJSONEncoder` plantait (`UnicodeDecodeError`) sur des `bytes` qui ne
+  sont pas de l'UTF-8 valide — encode maintenant en base64, sans exception
+  possible quelle que soit la séquence d'octets.
+- `pyproject.toml` restait à `0.1.0rc3` alors que `sinmonto.__version__` disait
+  déjà `0.1.0rc4` — deux sources de vérité contradictoires (`pip show sinmonto`
+  mentait). Passé en versioning dynamique (`[tool.hatch.version]` lit
+  `sinmonto/_version.py`) : une seule source de vérité désormais, structurellement.
+- File FIFO de la cascade de signaux dérivés : `list.pop(0)` (O(n), donc O(n²)
+  cumulé) remplacé par `collections.deque.popleft()` (O(1)).
+
+Les 4 bugs et le point de performance ont été trouvés par un audit adversarial
+(Grok, campagne de benchmark rc4) — détail complet, reproduction et correction
+de chacun : [`journal-integration.md`](docs/journal-integration.md), entrée
+du 22 septembre 2026.
+
+### Added
+- `docs/benchmark-rc4.md` et `scripts/benchmark.py` — chiffres mesurés
+  (pas estimés) et harness reproductible pour l'évaluation, la cascade, le
+  `FactStore`, la comparaison avec une boucle Python nue et la mémoire.
+
 ## [0.1.0rc4] - 2026-09-22
 
 ### Added

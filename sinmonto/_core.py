@@ -15,6 +15,7 @@ racine du dépôt.
 
 from __future__ import annotations
 
+import base64
 import copy
 import json
 from dataclasses import dataclass
@@ -188,7 +189,14 @@ class _EngineJSONEncoder(json.JSONEncoder):
         if isinstance(obj, UUID):
             return {"__type": "UUID", "value": str(obj)}
         if isinstance(obj, bytes):
-            return {"__type": "bytes", "value": obj.decode("utf-8")}
+            # base64, jamais un décodage UTF-8 direct : `bytes` n'est pas
+            # forcément du texte encodé (données binaires arbitraires,
+            # blob chiffré...) et `.decode("utf-8")` levait UnicodeDecodeError
+            # sur tout ce qui n'est pas de l'UTF-8 valide. base64 encode
+            # n'importe quelle séquence d'octets sans exception, au prix
+            # d'un format non lisible tel quel (documenté). Trouvé en test
+            # adversarial (2026-09).
+            return {"__type": "bytes", "value": base64.b64encode(obj).decode("ascii")}
         return super().default(obj)
 
 

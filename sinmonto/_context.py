@@ -144,6 +144,18 @@ class InMemoryFactStore(FactStore):
         self._order: deque[UUID] = deque(maxlen=max_facts)
 
     def append(self, fact: Fact) -> None:
+        if fact.fact_id in self._facts:
+            # Fait déjà connu (ex : même événement redélivré deux fois en
+            # amont, livraison "at-least-once") — mise à jour de la valeur
+            # SANS dupliquer l'entrée dans _order. Sinon : la même fact_id
+            # occupe deux positions dans _order ; quand la première atteint
+            # le front et déclenche une éviction, `del self._facts[oldest]`
+            # supprime l'unique entrée du dict, mais la seconde position
+            # dans _order pointe encore vers cet id désormais absent —
+            # query() lève alors KeyError sur un fact_id pourtant "présent"
+            # dans _order. Trouvé en test adversarial (2026-09).
+            self._facts[fact.fact_id] = fact
+            return
         if len(self._order) == self._order.maxlen:
             oldest = self._order.popleft()
             del self._facts[oldest]

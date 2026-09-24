@@ -10,7 +10,7 @@ Explainable, deterministic event-driven decision engine, in pure Python — zero
 
 From the Fon *Sɛ́n mɔto* ("rule engine"). Every decision carries its own proof: why a rule matched, why another didn't, in what order, with what actual values at the time of evaluation.
 
-**Status: `0.1.0rc3` — technical preview.** The core is tested (42 tests in `tests/` + end-to-end integration) and the silent bugs found in multi-AI cross-review are fixed (see "Known limitations" below for what's deliberately left open). Staying in pre-release until a first round of real external usage feedback — the 0.x API isn't locked yet.
+**Status: `0.1.0rc6` — technical preview.** The core is tested (53 tests in `tests/` + end-to-end integration) and the silent bugs found in multi-AI cross-review are fixed (see "Known limitations" below for what's deliberately left open). Staying in pre-release until a first round of real external usage feedback — the 0.x API isn't locked yet.
 
 ## Why
 
@@ -26,7 +26,7 @@ From the Fon *Sɛ́n mɔto* ("rule engine"). Every decision carries its own proo
 pip install sinmonto
 ```
 
-*(Since the version is a pre-release (`0.1.0rc3`), a plain `pip install sinmonto` won't pick it up once published on PyPI — you'll need `pip install --pre sinmonto`, consistent with the preview status above. Until then: `pip install -e .` from a local copy of the repo.)*
+*(Since the version is a pre-release (`0.1.0rc6`), a plain `pip install sinmonto` won't pick it up once published on PyPI — you'll need `pip install --pre sinmonto`, consistent with the preview status above. Until then: `pip install -e .` from a local copy of the repo.)*
 
 ## Example
 
@@ -62,13 +62,12 @@ print(trace.condition_tree.description, "->", trace.condition_tree.result)
 
 A second signal for `usr_99` automatically picks up the context from the first — see [`examples/end_to_end.py`](./examples/end_to_end.py) and `ContextStore`.
 
-## Cross-review status (2026-08)
+## Cross-review status (2026-08 – 2026-09)
 
-The repo went through a multi-AI code cross-review (ChatGPT, Grok, DeepSeek, Kimi, Qwen, Meta AI). Six silent bugs — the ones that betrayed the explainability/determinism promise rather than simple documented gaps — were fixed before this preview: deep-copied context, real rule atomicity (snapshot/restore, including direct `ctx` mutation), `Signal.entity_id`/condition-operator/action-return validation, defensive payload copying, chained `causality`. A second pass (rc2 → rc3), on the actual repo this time rather than a zip, fixed three additional points: deep (not just shallow) copying on `Fact.payload`/`Effect.payload`, clarifying that bit-for-bit determinism excludes `trace_id`, and a packaging issue on `CLAUDE.md`. Full bug-by-bug detail: [`journal-integration.md`](./docs/journal-integration.md) *(French)*.
+The repo went through a multi-AI code cross-review (ChatGPT, Grok, DeepSeek, Kimi, Qwen, Meta AI). Six silent bugs — the ones that betrayed the explainability/determinism promise rather than simple documented gaps — were fixed before this preview: deep-copied context, real rule atomicity (snapshot/restore, including direct `ctx` mutation), `Signal.entity_id`/condition-operator/action-return validation, defensive payload copying, chained `causality`. A second pass (rc2 → rc3), on the actual repo this time rather than a zip, fixed three additional points: deep (not just shallow) copying on `Fact.payload`/`Effect.payload`, clarifying that bit-for-bit determinism excludes `trace_id`, and a packaging issue on `CLAUDE.md`. A third pass (rc3 → rc4, 2026-09) closed the last item deferred from the initial preview: derived-signal cascading (`EvaluationResult.derived_signals`) is now processed by an internal FIFO queue inside `evaluate()`, with `max_derived_depth` actually enforced and causality chained across hops — synthesized from independent reports by Kimi, ChatGPT, Grok, Gemini and Qwen, including two contract deviations caught by replaying each report's code against the already-locked spec rather than taking any one at face value. Full bug-by-bug detail: [`journal-integration.md`](./docs/journal-integration.md) *(French)*.
 
 ## Known limitations (v0.1.0-preview) — assumed, not bugs
 
-- Derived signals (`EvaluationResult.derived_signals`) are accepted by the API but **not processed** — no rule cascading in this version. The architecture decision (separate queue? recursive?) is deferred to a dedicated round rather than rushed. Planned for v0.2.0.
 - `RuleTrace.duration_ms` is always `Decimal("0")` — no real execution-time measurement yet.
 - Nested AND chains aren't flattened in the trace — cosmetic, the logic and short-circuiting remain correct.
 - No retention policy on `InMemoryContextStore`/`InMemoryFactStore` — in-memory stores meant for tests/demos/prototypes, not long-running production without a dedicated adapter.

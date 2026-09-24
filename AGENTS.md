@@ -2,6 +2,8 @@
 
 Instructions pour toute IA (Claude Code, Cursor, Copilot, ou autre) travaillant sur ce dépôt. Lis ceci avant de toucher au code.
 
+**`CLAUDE.md` est un lien symbolique vers ce fichier** (`CLAUDE.md -> AGENTS.md`), pas une copie — un seul contenu, deux points d'entrée. **Ne jamais éditer via `sed -i`, `> CLAUDE.md` ou tout outil qui réécrit en remplaçant le fichier à ce chemin** : ces outils font typiquement écriture-dans-un-temp-puis-rename, ce qui remplace le lien lui-même par un fichier indépendant — le symlink casse silencieusement, `CLAUDE.md` et `AGENTS.md` divergent sans erreur visible. Éditer `AGENTS.md` directement, ou un outil d'édition qui ouvre le chemin en écriture plutôt que de le remplacer (`str_replace`, la plupart des éditeurs). Trouvé deux fois en pratique : `zip -qr` sans `-y` remplaçait le lien par une copie du fichier cible à l'empaquetage (2026-08) ; `sed -i` sur le chemin `CLAUDE.md` le remplaçait par un fichier indépendant à l'édition (2026-09) — voir `journal-integration.md` pour le détail des deux.
+
 **Ce fichier est pour modifier `sinmonto` lui-même.** Si tu dois juste *utiliser* la bibliothèque dans un autre projet (écrire des règles, appeler `evaluate()`...), lis [`UTILISATION.md`](./UTILISATION.md) à la place — plus court, orienté API, pas gouvernance du dépôt.
 
 ## Ce projet en une phrase
@@ -40,13 +42,15 @@ python3 tests/run_all.py test_core    # un seul module, pour déboguer
 
 Les imports internes sont relatifs (`from ._core import Fact`) — un module ne peut donc pas s'exécuter avec `python3 sinmonto/_core.py` en direct. `pip install -e .` (voir `docs/fr/CONTRIBUTING.md`) rend `sinmonto` importable depuis `tests/` ; `run_all.py` ajoute aussi la racine du dépôt à `sys.path` en secours.
 
-## État actuel (v0.1.0rc4 — preview technique)
+## État actuel (v0.1.0rc6 — preview technique)
 
-Fait et testé de bout en bout (50 tests, `tests/` + intégration) : objets fondamentaux, contexte à deux phases avec persistance (`ContextStore`), trace d'explication en arbre, DSL avec opérateurs, moteur avec indexation alpha, tie-breaking déterministe, gestion d'erreur (`continue`/`fail_fast`/`fail_loud`), cascade de signaux dérivés (file FIFO, `max_derived_depth`, causality chaînée par hop).
+Fait et testé de bout en bout (53 tests, `tests/` + intégration) : objets fondamentaux, contexte à deux phases avec persistance (`ContextStore`), trace d'explication en arbre, DSL avec opérateurs, moteur avec indexation alpha, tie-breaking déterministe, gestion d'erreur (`continue`/`fail_fast`/`fail_loud`), cascade de signaux dérivés (file FIFO `deque`, `max_derived_depth`, causality chaînée par hop).
 
 Corrigé en revue croisée multi-IA (2026-08) — voir `docs/journal-integration.md` : atomicité réelle des règles (snapshot/restore de `ctx`, y compris mutation directe), copie profonde du contexte (y compris `Fact`/`Effect.payload`), validation `Signal.entity_id`/opérateurs de condition/kind composite/retours d'action, `causality` chaînée, code de sortie non nul du runner de tests sur échec.
 
-Cascade de signaux dérivés câblée (2026-09), synthèse de revue croisée 5 IA (Kimi, ChatGPT/Luna, Grok, Gemini, Qwen) — voir `docs/journal-integration.md`.
+Cascade de signaux dérivés câblée (2026-09), synthèse de revue croisée 5 IA — voir `docs/journal-integration.md`.
+
+Corrigé en audit adversarial (2026-09, Grok, benchmark rc4) : `AlphaIndex` qui écartait silencieusement un `NOT` sur champ absent, `KeyError` sur `fact_id` dupliqué dans `InMemoryFactStore`, `_EngineJSONEncoder` qui plantait sur `bytes` non-UTF-8, `pyproject.toml` désynchronisé de `_version.py` (passé en versioning dynamique), `list.pop(0)` → `deque.popleft()` dans la cascade. Voir `docs/journal-integration.md` et `docs/benchmark-rc4.md`.
 
 Pas encore fait, ne pas assumer que c'est câblé : mesure réelle de `duration_ms`, aplatissement des AND chaînés dans la trace, politique de rétention sur les stores mémoire. Voir `docs/roadmap-vision.md` et `docs/journal-integration.md` pour le détail et l'historique complet des décisions.
 

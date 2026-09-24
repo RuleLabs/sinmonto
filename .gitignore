@@ -14,3 +14,4 @@ venv/
 *.swp
 .vscode/
 .idea/
+benchmark_results.json

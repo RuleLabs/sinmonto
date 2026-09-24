@@ -8,7 +8,7 @@ name = "sinmonto"
 # règle"), vérifié sans collision commerciale ou logicielle notable. Ce
 # fichier avait un commentaire contradictoire ("jamais formellement
 # verrouillé") laissé après la décision — corrigé, 2026-08.
-version = "0.1.0rc3"
+dynamic = ["version"]
 description = "Explainable, deterministic event-driven decision engine, in pure Python — zero dependencies."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -48,3 +48,12 @@ Changelog = "https://github.com/RuleLabs/sinmonto/blob/main/docs/journal-integra
 
 [tool.hatch.build.targets.wheel]
 packages = ["sinmonto"]
+
+[tool.hatch.version]
+# Source unique de vérité déplacée ici plutôt que dupliquée : avant ce
+# correctif, `version` était une chaîne statique ci-dessus qui a dérivé de
+# sinmonto/_version.py dès rc4 (pyproject.toml disait encore rc3 alors que
+# __version__ disait rc4) — trouvé en benchmark croisé multi-IA (2026-09).
+# hatchling lit maintenant __version__ directement dans ce fichier ; il n'y
+# a plus qu'un seul endroit à modifier à chaque bump de version.
+path = "sinmonto/_version.py"

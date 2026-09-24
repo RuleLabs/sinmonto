@@ -67,6 +67,7 @@ from __future__ import annotations
 
 import copy
 import uuid
+from collections import deque
 from decimal import Decimal
 from typing import Any
 
@@ -115,8 +116,32 @@ class AlphaIndex:
             fields |= AlphaIndex._extract_fields(child)
         return fields
 
+    @staticmethod
+    def _contains_not(condition: "FieldCondition | CompositeCondition") -> bool:
+        if isinstance(condition, FieldCondition):
+            return False
+        if condition.kind == "not":
+            return True
+        return any(AlphaIndex._contains_not(child) for child in condition.children)
+
     def index_rule(self, rule_id: str, condition: "FieldCondition | CompositeCondition | None") -> None:
         if condition is None:
+            self._unindexed.add(rule_id)
+            return
+        if self._contains_not(condition):
+            # NOT peut matcher précisément quand un champ est ABSENT
+            # (~(Field("vip") == True) vaut True si "vip" n'existe pas dans
+            # le fait). Indexer sur la présence de ce champ violerait le
+            # contrat de cette classe ("un sur-ensemble de candidates,
+            # jamais un sous-ensemble") : la règle deviendrait candidate
+            # uniquement quand son champ est présent, donc jamais évaluée
+            # dans exactement le cas où elle doit matcher. Trouvé en test
+            # adversarial (2026-09) : rule_traces=() pour un fait sans
+            # "vip", alors que la condition elle-même vaut True dessus.
+            # Pas de tentative d'indexation fine (ex : NOT sous un AND avec
+            # un autre champ positif qui rendrait l'indexation sûre) —
+            # gardé simple et sûr, sélectivité plus fine différée à v1.1+
+            # comme optimize() le documente déjà.
             self._unindexed.add(rule_id)
             return
         fields = self._extract_fields(condition)
@@ -194,7 +219,11 @@ class DecisionEngine:
         # chercher un contexte sans rapport avec la cascade en cours).
         # () pour le hop racine : sa propre contribution (calculée en
         # début de boucle) n'a rien devant elle.
-        queue: list[tuple[Signal, int, tuple[uuid.UUID, ...]]] = [(signal, 0, ())]
+        # deque, pas list : popleft() est O(1) ; list.pop(0) est O(n), donc
+        # O(n²) cumulé sur une cascade large. Mesuré en benchmark (2026-09,
+        # Grok) : effet sous-linéaire mais réel dès quelques milliers de
+        # signaux dérivés dans une même cascade.
+        queue: deque[tuple[Signal, int, tuple[uuid.UUID, ...]]] = deque([(signal, 0, ())])
 
         all_effects: list[Effect] = []
         rule_traces: list[RuleTrace] = []
@@ -202,7 +231,7 @@ class DecisionEngine:
         has_errors = False
 
         while queue:
-            current_signal, depth, parent_causality = queue.pop(0)
+            current_signal, depth, parent_causality = queue.popleft()
             fact = current_signal.fact
 
             if fact is not None:

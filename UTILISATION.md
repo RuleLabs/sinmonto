@@ -6,7 +6,7 @@ consommant `sinmonto` comme bibliothèque — pas modifier le noyau.
 **Pas ce fichier** : si tu modifies `sinmonto/` lui-même, lis `AGENTS.md`
 et `CLAUDE.md` à la place.
 
-**Version documentée** : `0.1.0rc3` (preview). Vérifie `sinmonto.__version__` — ce document peut prendre du retard sur une version plus récente.
+**Version documentée** : `0.1.0rc6` (preview). Vérifie `sinmonto.__version__` — ce document peut prendre du retard sur une version plus récente.
 
 ---
 
@@ -136,7 +136,7 @@ Signature : `def action(ctx, fact) -> …`
 | Retour | Effet |
 |--------|--------|
 | `Effect(...)` | un effet |
-| `Signal(...)` | signal dérivé (**accepté mais non traité en v0.1** — perdu) |
+| `Signal(...)` | signal dérivé — traité en cascade (§7bis), sous réserve de `max_derived_depth` |
 | `dict` | fusionné dans le contexte (`context_delta`) |
 | `list` / `tuple` de `Effect`, `Signal`, et/ou `dict` | combinaison |
 | `None` | match sans effet ni delta |
@@ -241,7 +241,32 @@ rt.condition_tree.kind         # "field" | "and" | "or" | "not" | "error" | "non
 rt.condition_tree.result
 rt.condition_tree.actual_value # pour kind == "field"
 rt.condition_tree.children     # sous-arbre (court-circuit : branches non évaluées absentes)
+rt.hop                # 0 = signal racine, 1 = premier dérivé, etc. (rc4+)
+rt.trigger_signal_id   # signal du hop qui a déclenché CETTE évaluation (rc4+)
 ```
+
+## 7bis. Cascade de signaux dérivés (rc4+)
+
+Un `Signal` retourné par une action est mis en file et traité dans le
+**même** `evaluate()` — pas besoin d'enchaîner plusieurs appels toi-même.
+`decision.effects` et `decision.trace` agrègent **toute** la cascade,
+racine comprise, dans l'ordre d'exécution réel.
+
+```python
+def flag(ctx, fact):
+    child = Fact(fact_id=uuid4(), entity_id=fact.entity_id,
+                 fact_type="audit", _payload={"reason": "high_amount"},
+                 timestamp=clock.now())
+    derived = Signal(signal_id=uuid4(), fact=child, signal_type="derived",
+                      timestamp=clock.now())
+    return [Effect("FLAGGED", {}, "flag"), derived]  # effet + signal dérivé
+```
+
+`max_derived_depth` (3 par défaut, `engine._config["max_derived_depth"]`)
+borne la profondeur. Au-delà : `has_errors=True` + `RuleTrace` avec
+`rule_id="__max_derived_depth__"` sous `continue`/`fail_fast` (le signal en
+trop est abandonné, le reste de la cascade continue) ; `MaxDerivedDepthExceededError`
+sous `fail_loud` (voir §8).
 
 ## 8. Gestion d’erreur (côté moteur)
 
@@ -250,7 +275,8 @@ rt.condition_tree.children     # sous-arbre (court-circuit : branches non évalu
 À l’exécution, politique par défaut `"continue"` :
 
 - exception dans une règle → capturée, `has_errors=True`, autres règles continuent ;
-- le `context_delta` **retourné** par une règle qui plante n’est pas appliqué.
+- le `context_delta` **retourné** par une règle qui plante n’est pas appliqué ;
+- signal dérivé qui dépasserait `max_derived_depth` → même politique (§7bis).
 
 Forcer un autre mode (usage avancé / tests) :
 
@@ -259,6 +285,10 @@ engine._config["rule_error_policy"] = "fail_fast"  # ou "fail_loud"
 ```
 
 (`EngineConfig` public n’existe pas encore en v0.1 — `_config` est interne.)
+
+Sous `fail_loud`, deux exceptions peuvent remonter d'`evaluate()` :
+`RuleEvaluationError` (une règle a levé) et `MaxDerivedDepthExceededError`
+(profondeur de cascade dépassée) — toutes deux des `EngineRuntimeError`.
 
 ## 9. Horloge
 
@@ -279,17 +309,17 @@ replay, injecter `ManualClock`. En production, passer une `Clock` dont
 
 | Sujet | État réel |
 |-------|-----------|
-| Signaux dérivés (`EvaluationResult.derived_signals`) | Acceptés par l’API, **non traités** (pas de cascade) |
+| Signaux dérivés (`EvaluationResult.derived_signals`) | Traités en cascade depuis rc4 (§7bis) — plus une limitation |
 | `RuleTrace.duration_ms` | Toujours `Decimal("0")` |
 | Fenêtres temporelles / agrégats | Non |
 | Transitions d’état (FSM) | Non |
 | `engine.replay()` | Non |
 | Exécuteur d’`Effect` | Non fourni — à écrire côté appli |
 | Rétention / borne des stores mémoire | Ring buffer sur les faits seulement (`max_facts`) |
+| `Decision.has_derived_signals` (compteur/flag dédié) | N'existe pas — regarder si un `RuleTrace.hop > 0` existe dans la trace |
 
-Si tu as besoin d’une cascade (alerte → score → blocage), enchaîne **toi-même**
-plusieurs `evaluate()` côté applicatif pour l’instant, ou attends la file
-dérivée (roadmap).
+Pour une cascade (alerte → score → blocage), retourne le `Signal` dérivé
+depuis l'action — voir §7bis, pas besoin de l'enchaîner toi-même.
 
 ## 11. Checklist anti-patterns (à appliquer avant de livrer du code)
 

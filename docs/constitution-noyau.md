@@ -177,7 +177,9 @@ class AlphaIndex:
     def optimize(self) -> None: ...   # appelé par engine.compile()
 ```
 
-**Palier v1.0** : indexation par nom de champ référencé uniquement (peu importe AND/OR/NOT — un filtre par champ reste correct quelle que soit la structure booléenne, il ne fait qu'écarter les règles qui ne touchent à aucun champ du fait reçu). Les règles sans condition sur `Fact` (lisent uniquement `ctx`) vont dans un bucket `_unindexed`, toujours candidates.
+**Palier v1.0** : indexation par nom de champ référencé — sauf si le champ apparaît sous un `NOT` à n'importe quelle profondeur, auquel cas la règle entière va dans `_unindexed` (voir note 2026-09 ci-dessous). Les règles sans condition sur `Fact` (lisent uniquement `ctx`) vont aussi dans ce bucket, toujours candidates.
+
+*(Avant 2026-09, ce paragraphe affirmait qu'un filtre par champ restait correct "peu importe AND/OR/NOT" — **faux**, trouvé en test adversarial : `~(Field("vip") == True)` doit matcher précisément quand `"vip"` est **absent** du fait ; indexer cette règle sur la présence de `"vip"` la rendait candidate seulement quand `"vip"` est présent — jamais dans le cas où elle doit réellement matcher. Violation directe de la garantie "sur-ensemble, jamais sous-ensemble" ci-dessus, silencieuse : `evaluation_order` restait vide, aucune erreur. Corrigé en excluant tout arbre contenant un `NOT` de l'indexation par champ, plutôt qu'une analyse fine du sous-arbre — pas de tentative de distinguer un `NOT` "protégé" par un `AND` avec un champ positif ailleurs dans l'arbre, différé à v1.1+ comme le palier suivant ci-dessous.)*
 
 **Palier différé (v1.1+, non codé maintenant)** : indexation par opérateur/valeur avec `bisect` pour les comparaisons de plage — vient se greffer derrière la même interface publique, sans rien casser côté appelant.
 
@@ -242,6 +244,9 @@ class InMemoryFactStore(FactStore):
         self._order: deque[UUID] = deque(maxlen=max_facts)
 
     def append(self, fact: Fact) -> None:
+        if fact.fact_id in self._facts:
+            self._facts[fact.fact_id] = fact  # redélivrance du même fact_id : pas de doublon dans _order — sinon KeyError différé dans query() à l'éviction (trouvé en test adversarial, 2026-09)
+            return
         if len(self._order) == self._order.maxlen:
             oldest = self._order.popleft()
             del self._facts[oldest]
@@ -301,7 +306,7 @@ class _EngineJSONEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, Decimal): return {"__type": "Decimal", "value": str(obj)}
         if isinstance(obj, UUID): return {"__type": "UUID", "value": str(obj)}
-        if isinstance(obj, bytes): return {"__type": "bytes", "value": obj.decode("utf-8")}
+        if isinstance(obj, bytes): return {"__type": "bytes", "value": base64.b64encode(obj).decode("ascii")}  # base64, pas .decode("utf-8") — bytes n'est pas forcément du texte UTF-8 valide (2026-09)
         return super().default(obj)
 ```
 
@@ -444,8 +449,8 @@ class InMemoryContextStore(ContextStore):
 | 4 | Transitions d'état comme `Evaluable` spécialisé | 1-2 jours |
 | 5 | `engine.replay()` sur le `FactStore` déjà en place | 1-2 jours |
 
-**Plus tard, pas urgent** : benchmark de charge (1000 règles, 10000 faits — proposé par Kimi lors d'une revue précédente), packaging réel (`pyproject.toml`, `pip install -e .`).
+**Plus tard, pas urgent** : packaging réel (`pyproject.toml`, `pip install -e .`) — fait en rc5 (versioning dynamique, `py.typed` ajouté, `twine check` passe sur sdist+wheel). Le benchmark de charge proposé par Kimi est fait (voir `docs/benchmark-rc4.md`) ; publication PyPI elle-même pas encore déclenchée (workflow prêt, `workflow_dispatch` manuel).
 
 ## 13. Statut
 
-Spec complète. Plus aucune question ouverte — Q1 à Q6 verrouillées, l'incohérence entre elles résolue, les angles morts comblés. Prêt pour le premier tour d'implémentation réel.
+Implémentation en cours depuis ce document, sur plusieurs tours de revue croisée multi-IA — voir `journal-integration.md` pour la chronologie complète. `0.1.0rc5` : 53 tests passent, `sinmonto.__version__`/`pip show`/le nom du wheel construit sont cohérents, `twine check` passe. Pas encore publié sur PyPI (aucune version n'y existe pour l'instant).

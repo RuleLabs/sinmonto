@@ -8,10 +8,12 @@ contributeur peut le lire sans passer par 500 lignes de journal.
 
 from __future__ import annotations
 
+import base64
+import json
 import uuid
 from decimal import Decimal
 
-from sinmonto._core import Effect, EvaluationResult, Fact, Signal
+from sinmonto._core import Effect, EvaluationResult, Fact, Signal, _EngineJSONEncoder
 from sinmonto._context import EvaluationContext, InMemoryContextStore, InMemoryFactStore
 from sinmonto._dsl import CompositeCondition, Field, FieldCondition, Rule
 from sinmonto._engine import DecisionEngine
@@ -299,3 +301,61 @@ def test_reload_of_previous_context_is_deep_copied() -> None:
     engine2.evaluate(make_signal({"x": 2}, "e_reload"))
 
     assert frozen1.values["items"] == [1, 2, 3]
+
+
+# --------------------------------------------------------------------------- #
+# Revue adversariale — Grok, benchmark rc4 (2026-09)
+# --------------------------------------------------------------------------- #
+
+def test_alpha_index_not_condition_matches_on_absent_field() -> None:
+    """~(Field("vip") == True) doit matcher quand "vip" est absent du fait
+    (la condition elle-même vaut True dans ce cas) — mais AlphaIndex
+    indexait ce NOT comme n'importe quel champ positif : la règle ne
+    devenait candidate QUE si "vip" est présent, donc n'était jamais
+    évaluée dans exactement le cas où elle doit matcher. Silencieux :
+    evaluation_order restait vide, aucune erreur. Violation du contrat
+    d'AlphaIndex (constitution-noyau.md §4 : "un sur-ensemble de
+    candidates, jamais un sous-ensemble"). Trouvé par Grok (test
+    adversarial, benchmark rc4)."""
+    engine = DecisionEngine()
+    engine.add_rule(Rule(
+        "not_vip", priority=1, condition=~(Field("vip") == True),
+        action=lambda ctx, fact: Effect("FLAGGED", {}, "not_vip"),
+    ))
+    engine.compile()
+
+    decision = engine.evaluate(make_signal({"amount": 10}))  # pas de "vip"
+    assert "not_vip" in decision.trace.evaluation_order
+    assert decision.effects and decision.effects[0].effect_type == "FLAGGED"
+
+
+def test_fact_store_duplicate_fact_id_does_not_corrupt_eviction() -> None:
+    """Un même fact_id ajouté deux fois (ex. redélivrance amont
+    "at-least-once") créait deux entrées dans _order pour une seule dans
+    _facts. La première éviction du fact_id fait `del self._facts[oldest]` ;
+    la seconde position dans _order pointe alors vers un id absent de
+    _facts, et query() levait KeyError — sur n'importe quelle entité, pas
+    seulement celle du doublon, puisque query() résout `self._facts[fid]`
+    avant de filtrer par entity_id. Trouvé par Grok (test adversarial,
+    benchmark rc4)."""
+    store = InMemoryFactStore(max_facts=3)
+    dup = Fact(fact_id=uuid.uuid4(), entity_id="e1", fact_type="t", _payload={}, timestamp=Decimal("0"))
+    store.append(dup)
+    store.append(dup)  # même fact_id, redélivré
+    for _ in range(3):
+        store.append(Fact(fact_id=uuid.uuid4(), entity_id="e1", fact_type="t",
+                           _payload={}, timestamp=Decimal("0")))
+    store.query("e1")  # ne doit pas lever KeyError
+
+
+def test_json_encoder_handles_non_utf8_bytes() -> None:
+    """_EngineJSONEncoder décodait bytes en UTF-8 directement — levait
+    UnicodeDecodeError sur des octets qui ne sont pas du texte UTF-8 valide
+    (données binaires arbitraires, ex. un blob chiffré). base64 encode
+    n'importe quelle séquence d'octets sans jamais lever. Trouvé par Grok
+    (test adversarial, benchmark rc4)."""
+    non_utf8 = b"\xff\xfe\x00\x01"
+    encoded = json.dumps({"blob": non_utf8}, cls=_EngineJSONEncoder)
+    parsed = json.loads(encoded)
+    assert parsed["blob"]["__type"] == "bytes"
+    assert base64.b64decode(parsed["blob"]["value"]) == non_utf8
